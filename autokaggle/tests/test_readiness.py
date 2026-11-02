@@ -197,8 +197,8 @@ def test_numeric_dollar_budgets_are_accepted(defined_state, value):
     assert readiness.assess(defined_state)["ready"]
 
 
-@pytest.mark.parametrize("value", ["A small amount", "20", "20 tokens", "Unknown", "GBP 20"])
-def test_budget_needs_a_dollar_amount(defined_state, value):
+@pytest.mark.parametrize("value", ["Unknown", "not sure", "TBD", ""])
+def test_budget_unknown_stays_open(defined_state, value):
     defined_state["items"]["plan"]["requirements"]["token_budget"] = recorded(value)
     result = readiness.assess(defined_state)
     assert not result["ready"]

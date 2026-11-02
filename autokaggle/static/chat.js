@@ -71,7 +71,7 @@
   function userCount() { return (state.conversation?.messages || []).filter((message) => message.role === "user").length; }
   function setBusy(value, label = "Thinking through your challenge…") { state.busy = value; $("thinking-text").textContent = label; updateControls(); if (state.pending?.action === "messages") renderMessages(true); }
   function updateControls() {
-    const busy = working(); const ready = !!state.projectId && !!state.conversation && !contactRequired(); const uncertain = !!state.pending && !busy; const blockedByError = state.conversation?.status === "error";
+    const busy = working(); const ready = !!state.projectId && !!state.conversation && !contactRequired() && !state.conversation.storage?.required; const uncertain = !!state.pending && !busy; const blockedByError = state.conversation?.status === "error";
     const canCreate = state.config?.can_create_projects !== false;
     $("sign-out").hidden = !state.config?.private_mode; $("sign-out").disabled = !!state.signingOut; $("sign-out").textContent = state.signingOut ? "Signing out…" : "Sign out";
     $("new-project").hidden = !canCreate; $("new-project").disabled = busy || !canCreate; $("message-input").disabled = busy || !ready;
@@ -87,6 +87,8 @@
     $("answer-in-chat").disabled = busy || !ready;
     updateWorkflowControls(); updateDataControls(); renderContact(); renderReviewControls(); updateBypassControls();
     renderError();
+    for (const control of document.querySelectorAll("[data-edit-answer]")) control.disabled = busy || !ready || uncertain;
+    if (window.dispatchEvent && typeof CustomEvent === "function") window.dispatchEvent(new CustomEvent("autokaggle:state", { detail: { projectId: state.projectId, conversation: state.conversation, busy: working(), canCreate: state.config?.can_create_projects !== false } }));
   }
   function showError(text, heading = "Something needs attention") { state.localError = { text, heading }; state.dismissedError = null; renderError(); }
   function renderError() {
@@ -791,8 +793,10 @@
     for (const message of messages) {
       if (!["user", "assistant"].includes(message.role)) continue;
       const block = element("article", `message ${message.role}`); const role = element("div", "message-role");
-      if (message.role === "assistant") { const mark = element("img", "assistant-mark"); mark.src = "/static/bold-butterfly.svg"; mark.alt = ""; mark.width = 24; mark.height = 24; mark.setAttribute("aria-hidden", "true"); role.append(mark, document.createTextNode("BOLD AutoKaggle")); } else role.textContent = message.pending ? (working() ? "You · sending" : "You · awaiting confirmation") : "You";
-      block.append(role, message.role === "user" ? element("div", "message-content", message.content) : markdown(message.content, "message-content")); root.append(block);
+      if (message.role === "assistant") { const mark = element("img", "assistant-mark"); mark.src = "/static/bold-butterfly.svg"; mark.alt = ""; mark.width = 24; mark.height = 24; mark.setAttribute("aria-hidden", "true"); role.append(mark, document.createTextNode("BOLD AutoKaggle")); } else role.textContent = message.pending ? (working() ? "You · sending" : "You · awaiting confirmation") : message.author || "You";
+      block.append(role, message.role === "user" ? element("div", "message-content", message.content) : markdown(message.content, "message-content"));
+      if (message.role === "user" && !message.pending) { const edit = element("button", "message-edit", "Edit or remove answer"); edit.type = "button"; edit.setAttribute("data-edit-answer", message.id); edit.disabled = working(); block.append(edit); }
+      root.append(block);
     }
     if (nearBottom || forceScroll) window.requestAnimationFrame(() => { transcript.scrollTop = transcript.scrollHeight; });
   }
@@ -906,7 +910,7 @@
     finally { setBusy(false); }
   }
   async function dispatch(action, message, recovered) {
-    if (working() || !state.projectId || !state.conversation || contactRequired()) return;
+    if (working() || !state.projectId || !state.conversation || contactRequired() || state.conversation.storage?.required) return;
     if (state.pending && !recovered) return;
     if (action === "continue" && !recovered && (state.conversation.interview?.can_continue !== true || state.conversation.review?.mode === "revision")) return;
     const request = recovered || { project_id: state.projectId, action, request_id: crypto.randomUUID(), ...(action === "messages" ? { message, before_user_count: userCount() } : {}) };
@@ -936,6 +940,13 @@
     await dispatch("retry");
   }
   function bind() {
+  window.addEventListener("autokaggle:open", (event) => { if (!working() && event.detail?.id) runNavigation(() => openProject(event.detail.id)); });
+  window.addEventListener("autokaggle:refresh", () => { if (!working() && state.projectId) runNavigation(() => openProject(state.projectId)); });
+  window.addEventListener("autokaggle:deleted", (event) => {
+    const id = event.detail?.id;
+    if (id) { writeStorage(draftKey(id), null); writeStorage(pendingKey(id), null); }
+    if (id === state.projectId) { writeStorage(LAST_PROJECT, null); window.location.replace("/"); }
+  });
     $("organizer-email-form").addEventListener("submit", (event) => { event.preventDefault(); saveOrganizerEmail(); });
     $("organizer-email").addEventListener("input", () => { if (state.contactError) { state.contactError = null; renderContact(); } });
     $("review-tab").addEventListener("click", () => setView("review"));

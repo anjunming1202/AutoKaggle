@@ -92,8 +92,8 @@ REQUIREMENTS = {
         _requirement("status", "Review plan or status", "State whether scientific review is pending or complete and how remaining decisions will be checked. A pending review with an owner and plan is sufficient to define the challenge."),
     ],
     "plan": [
-        _requirement("compute_budget", "Compute budget in dollars", "Give a numeric dollar estimate or range for compute for a credible attempt. Zero is valid when no paid compute is needed. Unknown is still an open requirement."),
-        _requirement("token_budget", "Model-token budget in dollars", "Give a separate numeric dollar estimate or range for model tokens for a credible attempt. Zero is valid when no paid model calls are needed. Unknown is still an open requirement."),
+        _requirement("compute_budget", "Compute estimate", "Describe compute for a credible attempt in the form you use: for example A100 x8 x24h, GPU-hours, CPU time, dollars, or an existing allocation. Preserve the supplied notation. Unknown remains open."),
+        _requirement("token_budget", "Model-token estimate", "Describe the separate model-call or token allowance in tokens, calls, dollars, or another concrete allocation. Zero or no model calls is valid. Preserve the supplied notation; unknown remains open."),
         _requirement("ownership", "Budget limits and owner", "State who owns the compute and token budget decisions and any hard limits. An explicit decision that no further financial limit applies is acceptable."),
         _requirement("schedule", "Schedule", "State relevant dates or attempt duration, or explicitly state that the challenge has no schedule constraint."),
     ],
@@ -211,10 +211,11 @@ def _budget_amount(record):
             texts.append(entry)
         elif isinstance(entry, dict) and isinstance(entry.get("quotes"), list):
             texts.extend(quote for quote in entry["quotes"] if isinstance(quote, str))
-    amount = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
-    currency_before = r"(?<![-\w])(?:US\$|\$|USD\s*)\s*" + amount
-    currency_after = r"(?<![-\w.])" + amount + r"\s*(?:USD\b|(?:US\s+)?dollars?\b)"
-    return any(re.search(currency_before + "|" + currency_after, text, re.I) for text in texts)
+    # Budget notation is intentionally free text. Evidence and the interview
+    # establish meaning; this server check must not require a currency symbol.
+    return any(isinstance(text, str) and text.strip() and not _unknown_only(text)
+               for text in texts)
+
 
 
 def _server_complete(field, item):
@@ -260,7 +261,7 @@ def criterion_result(field, item, criterion):
             if _unknown_only(record["value"]):
                 return False, "The answer is unknown. This required decision remains open."
             if field == "plan" and criterion["id"] in {"compute_budget", "token_budget"} and not _budget_amount(record):
-                return False, "Provide a numeric dollar estimate or range. Zero dollars is valid when no paid use is needed."
+                return False, "Describe the compute or token allowance. Hardware-time, tokens, dollars, or another concrete allocation are accepted."
             return True, ""
         return False, "A recorded answer needs a value and supporting evidence."
     if status == "not_applicable":

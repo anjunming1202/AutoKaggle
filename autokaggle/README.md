@@ -20,6 +20,12 @@ These workflows share one challenge lifecycle. Submission format, evaluator type
 
 The proposed build order is **1 + 2 → 7 → 3 → 5**. Complete the common submission and leaderboard lifecycle first. Then add objective scoring, controlled sequential inputs, and future-data collection. Preserve the compact chat and ask only for missing, relevant decisions. The [backend plan](docs/FUTURE_BACKEND.md#selected-mvp-delivery-order) defines the completion checks. Other survey types are deferred.
 
+## Session tools
+
+Open **Sessions** in the header to resume, share, or delete a problem. **Start from research** imports a public paper and GitHub repository into an editable starting brief. Approve the brief before it becomes interview evidence. **Attempts & changes** carries measured development results into a revision. Select **Edit or remove answer** beside a researcher turn to replace or retract it and remove its derived records. Independent decisions remain recorded.
+
+Accept the data-storage notice before adding research content. The session owner controls dataset/session deletion and collaborator access. Compute and token estimates accept hardware-time, token counts, dollars, or another concrete notation. See [session and data controls](docs/WORKSPACE.md) for limits, privacy behavior, and backup operation. These branch changes require release before they appear on the hosted site.
+
 ## Use it
 
 1. On the hosted site, sign in with the six-digit code sent to your email. The verified address fills the private organizer contact for a new challenge. Local mode or an existing draft can still request the correspondence email. Then answer the agent's opening question. Share any research brief, data description, known method, or useful result. A complete specification is not required to start.

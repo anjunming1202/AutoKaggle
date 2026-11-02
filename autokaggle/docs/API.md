@@ -165,3 +165,8 @@ Modes are `confirmed`, `delegated`, and `exception`. Confirmed decisions are org
 To remove scope acceptance, send `field`, `request_id`, and `remove: true`. The response is the conversation view. Checklist items include `scope` and `can_accept_scope`. Question records include `requirement_id` and `why`. A `scope_checkpoint` reports the blocked criterion after two unsuccessful clarification attempts. Any proposed answer is unaccepted until the organizer confirms it.
 
 Scope changes require rebuilt packages and review links. Validated organizer settings and technical checks cannot be resolved through this endpoint. Account ownership and the existing conversation write lock apply.
+
+
+## Session collaboration and data controls
+
+See [the workspace API](WORKSPACE.md#api-additions) for source import, explicit storage acceptance, session and dataset erasure, answer replacement, handoff codes, and revision after measured attempts. Research writes require the current storage notice (428 until accepted). The existing authorization, project locks, quotas, and retry identities remain in force.

@@ -36,8 +36,8 @@ def brief_checks(project):
     for key, label in [("compute_budget", "Compute estimate"), ("token_budget", "Model token estimate")]:
         present = known(a.get(key, ""))
         checks.append(check(key, "pass" if present else "warning", label,
-                            f"Organizer estimate: {a[key]}" if present else "Estimate missing. Record US dollars for one credible attempt, or state unknown.",
-                            "" if present else "Include experiments and final evaluation. A range or USD 0 is acceptable."))
+                            f"Organizer estimate: {a[key]}" if present else "Estimate missing. Describe compute or model usage for one credible attempt, or state unknown.",
+                            "" if present else "Include experiments and final evaluation. Hardware-time, token counts, dollars, or no model calls are accepted."))
     if a.get("data_origin") == "synthetic":
         checks.append(check("synthetic", "warning", "Synthetic data",
                             "This is a synthetic trial. Its results do not establish real scientific validity.", "Confirm the generator and intended use."))
