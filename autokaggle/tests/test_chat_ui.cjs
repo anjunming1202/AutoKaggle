@@ -1074,14 +1074,14 @@ test("Connection failures still offer recovery and review-only sessions receive 
 });
 
 function scopeHarness(api = async () => ({ status: "idle", messages: [], checklist: [] }), itemExtra = {}) {
-  const { $ } = dom(); const cache = new Map(); const requests = []; const actions = [];
+  const { $ } = dom(); const cache = new Map(); const requests = []; const actions = []; const sent = [];
   const item = { id: "task", label: "Task", can_accept_scope: true, value: "Predict stability over one million orbits.", requirements: [
     { id: "outcome", label: "Outcome", status: "missing", can_delegate: false },
     { id: "format", label: "Output format", status: "missing", can_delegate: true, delegation_policy: "Choose a supported format and record its schema." },
   ], ...itemExtra };
   const state = { projectId: "p1", conversation: { status: "idle", checklist: [item] }, pending: null, scopeDrafts: {}, busy: false };
   const shared = { state, $, working: () => state.busy, contactRequired: () => false, checklistItems: () => state.conversation.checklist || [],
-    actions, retry: () => actions.push("retry"), dispatch: (action) => actions.push(action),
+    actions, sent, retry: () => actions.push("retry"), dispatch: (action, message) => { actions.push(action); if (message) sent.push(message); },
     pendingKey: (id) => `autokaggle-chat-pending:${id}`, readStorage: (key) => cache.get(key) || null, writeStorage: (key, value) => cache.set(key, value),
     element: node, renderSummary: noop, renderConversation: noop, refreshWorkflow: async () => {},
     rememberPending: (value) => { state.pending = value; }, setBusy: (value) => { state.busy = value; }, base: () => "/api/projects/p1/conversation",
@@ -1327,4 +1327,38 @@ test("Private project 404 checks account status and offers sign-in only after ex
     assert.deepEqual(paths, ["/api/projects/p1/conversation", "/api/access"]);
     assert.equal(!!state.authRequired, auth_kind === "anonymous");
   }
+});
+
+test("A required competition checkpoint offers valid choices rather than unavailable scope review", () => {
+  const h = scopeHarness(undefined, { id: "competition", can_accept_scope: false });
+  h.state.conversation.scope_checkpoint = { field: "competition", requirement_id: "choice", reason: "Choose a competition type." };
+  h.checkpoint(); const nodes = descendants(h.$("scope-checkpoint"));
+  const buttons = nodes.filter((n) => n.tag === "button");
+  assert.deepEqual(buttons.map((n) => n.textContent), ["Prediction submissions", "Code submissions"]);
+  assert.ok(buttons.every((n) => !n.disabled));
+  buttons[0].events.click(); buttons[1].events.click();
+  assert.deepEqual(h.sent, ["Competition: prediction", "Competition: code"]);
+  assert.equal(h.requests.length, 0, "Choices must use the existing idempotent chat dispatch");
+  assert.ok(!nodes.some((n) => n.textContent.includes("saved answer still needs")));
+});
+
+test("A required daily allowance validates its range before sending a confirmed chat choice", () => {
+  const h = scopeHarness(undefined, { id: "submissions", can_accept_scope: false });
+  h.state.conversation.setup = { daily_submission_limit: 7 };
+  h.state.conversation.scope_checkpoint = { field: "submissions", requirement_id: "allowance" };
+  h.checkpoint(); const nodes = descendants(h.$("scope-checkpoint"));
+  const input = nodes.find((n) => n.tag === "input");
+  const confirm = nodes.find((n) => n.textContent === "Confirm daily allowance");
+  assert.equal(input.value, "7"); assert.equal(confirm.disabled, false);
+  for (const value of ["", "0", "1001", "2.5", "unknown"]) { input.value = value; confirm.events.click(); }
+  assert.deepEqual(h.sent, []);
+  input.value = "12"; confirm.events.click(); assert.deepEqual(h.sent, ["Daily submissions: 12"]);
+});
+
+test("A failed required-setting turn still offers saved-answer recovery before new choices", () => {
+  const h = scopeHarness(undefined, { id: "competition", can_accept_scope: false });
+  h.state.conversation.status = "error"; h.state.conversation.can_retry = true;
+  h.state.conversation.scope_checkpoint = { field: "competition", requirement_id: "choice" };
+  h.checkpoint(); const buttons = descendants(h.$("scope-checkpoint")).filter((n) => n.tag === "button");
+  assert.deepEqual(buttons.map((n) => n.textContent), ["Retry saved answer"]);
 });

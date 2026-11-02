@@ -37,6 +37,7 @@ INTERVIEW_STAGES = [
     ("problem", "Problem", ("question", "task", "data", "evaluation", "leakage")),
     ("approach", "Method and deployment", ("methodology", "deployment", "protocol")),
     ("baseline", "Reference baseline", ("difficulty",)),
+    ("setup", "Setup", ("competition", "submissions", "organizer", "review", "plan", "entry", "support")),
 ]
 CORE_FIELDS = {"question", "task", "data", "methodology", "deployment", "evaluation", "leakage", "protocol", "plan"}
 AGENT_OWNED_FIELDS = {"trial"}
@@ -249,7 +250,7 @@ def conversation_view(project):
     state = ensure_conversation(project)
     view = {key: copy.deepcopy(state[key]) for key in ("messages", "current_question", "scope_checkpoint", "readme", "phase", "status", "error", "can_retry", "followups")}
     active = state.get("current_question")
-    active_field = active["field"] if active else "question" if state["phase"] == "initial" else None
+    active_field = active["field"] if active else (state.get("scope_checkpoint") or {}).get("field") or ("question" if state["phase"] == "initial" else None)
     view["checklist"] = [{"id": key, "label": label, "pillar": pillar,
                           **{name: state["items"][key][name] for name in ("status", "value", "gap")},
                           "owner": "agent" if key in AGENT_OWNED_FIELDS else "researcher",
@@ -283,7 +284,7 @@ def conversation_view(project):
                                          **resolution_counts,
                                          "detail": "Resolved requirements include evidence and explicit organizer scope decisions. Scientific claims still need review."}})
     view["interview"] = {"stages": stages,
-        "current_stage": next((stage_id for stage_id, _, fields in INTERVIEW_STAGES if active and active["field"] in fields), "problem" if state["phase"] == "initial" else None),
+        "current_stage": next((stage_id for stage_id, _, fields in INTERVIEW_STAGES if active_field in fields), "problem" if state["phase"] == "initial" else None),
         "next_question": active["text"] if active else INITIAL_MESSAGE if state["phase"] == "initial" else None,
         "can_draft": state["status"] != "working",
         "can_continue": bool(state.get("readme") and state["phase"] == "draft" and not state.get("current_question")
@@ -645,6 +646,7 @@ def _platform_context(project):
     return {
         "source": "Application contract; these are fixed rules, not evidence of completed work.",
         "organizer_settings": onboarding_setup.get(project, include_private=False),
+        "organizer_contact_recorded": bool(onboarding_setup.get(project)["organizer_email"]),
         "submission": {"format": "CSV", "columns": ["_autokaggle_id", "prediction"],
                        "rows": "Exactly one prediction per supplied input ID; no missing or duplicate IDs.",
                        "values": "Class labels, probabilities, or finite numbers according to the chosen task and metric."},
@@ -1127,7 +1129,12 @@ def _checkpoint(state, field, criterion, reason=None):
     _reset_error(state)
     same_decision = previous and all(previous.get(key) == checkpoint[key] for key in ("field", "requirement_id"))
     if not same_decision:
-        _message(state, "assistant", f"We have not resolved {criterion['label'].lower()}. Open this checklist item to confirm the scope, record an explicit exception, or supply a new decision. I will not ask the same detail again automatically.")
+        instructions = {
+            "competition": "Choose Prediction submissions or Code submissions below, or reply with your choice in chat. This required organizer setting cannot be resolved through scope acceptance.",
+            "submissions": "Confirm or change the daily submission allowance below, or state the allowance in chat. This required organizer setting cannot be resolved through scope acceptance.",
+            "organizer": "Enter your private correspondence email in the email step. This required setting cannot be resolved through scope acceptance.",
+        }
+        _message(state, "assistant", instructions.get(field) or f"We have not resolved {criterion['label'].lower()}. Open this checklist item to confirm the scope, record an explicit exception, or supply a new decision. I will not ask the same detail again automatically.")
     elif state["messages"] and state["messages"][-1]["role"] == "user":
         _message(state, "assistant", "Your update is saved. The remaining gap is shown below. You can reply with a decision, review the recorded scope, or leave this detail open and continue.")
 

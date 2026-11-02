@@ -6,7 +6,7 @@ Read-only inspection of the hosted conversation matched the reported screenshot.
 
 The checkpoint compared its complete record to decide whether to add a message. Each new model explanation changed that record and repeated the same generic prompt. When a response failed, the scope controls were unavailable until the saved answer finished. The checkpoint did not explain this or provide a local recovery action.
 
-The inspected deployment reported no container restart. The separate session that stopped after sign-out was not identified in this inspection. Tests found recovery gaps that can affect a reopened session; they do not prove which gap caused that particular report.
+The inspected deployment reported no container restart. The owner later supplied the other session link. Its saved state was idle, with no pending answer, error, or active model call. The last model response had completed and passed validation. It was stopped at the compulsory competition-type choice after two questions. The checkpoint directed the researcher to scope acceptance and exception controls, although server-owned settings cannot use those controls. Replies such as “Review” or “About setup,” did not select prediction or code submissions, so the same setting remained unresolved. Signing back in restored this blocked state.
 
 ## Changes
 
@@ -19,6 +19,9 @@ The inspected deployment reported no container restart. The separate session tha
 7. **Interrupted server work.** Reopening a conversation checks the actual project lock. If no operation owns the lock, a saved working flag becomes an interrupted-response error with the existing retry path. An active operation is still reported as working. Recovery requires no service restart and makes no model call by itself.
 8. **Reconnect and retry.** A failed status connection offers Reconnect. This reads server state before proposing another action; it does not send a model retry to an idle server. Unconfirmed requests keep their original request IDs until their own POST confirms them. Status polling stops after five minutes or repeated connection failure. Read requests have a 15-second timeout.
 9. **Expired sign-in.** A private project 404 triggers a separate account-status check. An anonymous account gets a sign-in link back to the saved project. An authenticated account still gets the normal unavailable-project response. The server keeps unauthorized and unknown project IDs indistinguishable. Unauthorized polling stops immediately.
+10. **Required organizer settings.** Competition checkpoints show Prediction submissions and Code submissions buttons. Daily-allowance checkpoints show a number input with a range of 1–1,000 and an explicit confirmation button. These controls send ordinary, saved chat choices through the existing server validator and request-ID recovery path. A valid choice advances the interview without a model call to interpret it. They do not create scope acceptance, exceptions, or bypasses. An unfinished response still offers its retry before new choices.
+11. **Setup location.** The server now declares Setup as the fourth interview section, matching the existing UI. An active checkpoint selects its corresponding checklist item and section. Required settings no longer leave the progress view focused on Problem.
+12. **Private contact status.** Model context now includes an `organizer_contact_recorded` boolean. The private email address remains withheld. The prompt uses this status to avoid asking for an address that is already saved, including in draft next actions. The flag does not establish email delivery or review.
 
 The conversation prompt explains checkpoint corrections and reassessment. No dataset split, evaluator, model selection, model reasoning effort, email delivery service, or production conversation was changed by this PR.
 
@@ -33,5 +36,7 @@ python -m autokaggle.scripts.live_interview_recovery_verify
 ```
 
 The live script reads the private OpenRouter key from `.env`. It uses `openai/gpt-6.1-sol` with medium reasoning and a temporary store. Its fixture reproduces the reported kernel correction. It also signs out, signs back into the same account, recovers a saved interrupted answer, checks request replay, and leaves a checkpoint open without completing it. The mail transport is captured locally; this is not evidence of Gmail delivery. Only this isolated script skips the resend delay. Normal service limits are unchanged.
+
+The same live check reopens idle competition and daily-allowance checkpoints, records valid choices, and verifies that neither choice needs a model call or bypass. A separate browser fixture supplies explicit synthetic scientific decisions, then tests sign-in at the remaining settings checkpoint, both required choices, invalid quota rejection, and a real draft call with high reasoning. Seeded scientific decisions do not establish completion of a human interview.
 
 Reports and browser screenshots stay in the ignored `autokaggle/test-results/` directory. See [Validation](VALIDATION.md) for the completed checks and their limits. This PR requires a deployment before the hosted site receives the fixes. An existing failed answer can then be recovered with Retry; its saved text does not need to be entered again.

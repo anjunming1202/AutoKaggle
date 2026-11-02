@@ -105,6 +105,29 @@ def main():
                 assert final["conversation"]["items"]["question"]["requirements"]["success"]["status"] == "deferred"
                 assert not c.conversation_view(final)["readiness"]["ready"]
                 report["checks"]["checkpoint_deferral_does_not_complete_requirement"] = True
+                # Reproduce the second report: an idle, resumed session at a
+                # compulsory setting checkpoint. These choices bypass no gate.
+                calls_before_settings = final["_model_calls"]
+                for field, criterion, message, setting, expected in (
+                    ("competition", "choice", "Competition: code", "competition_type", "code"),
+                    ("submissions", "allowance", "Daily submissions: 5", "daily_submission_limit", 5),
+                ):
+                    final = app.state.store.get(identifier, identity["owner"])
+                    state = final["conversation"]
+                    state["_criterion_asks"][field + "." + criterion] = 2
+                    c._checkpoint(state, field, readiness.REQUIREMENTS[field][0])
+                    app.state.store.save(final)
+                    reopened = client.get(root + "/conversation").json()
+                    assert reopened["status"] == "idle" and reopened["interview"]["current_stage"] == "setup"
+                    response = client.post(root + "/conversation/messages", json={"message": message, "request_id": "live-required-" + field})
+                    response.raise_for_status()
+                    assert response.json()["status"] == "idle", response.json().get("error")
+                    final = app.state.store.get(identifier, identity["owner"])
+                    assert final["setup"][setting] == expected
+                    assert final["conversation"]["items"][field]["status"] == "answered"
+                    assert final["_model_calls"] == calls_before_settings
+                assert final["setup"]["submissions_confirmed"]
+                report["checks"]["resumed_required_settings_recorded_without_model_or_bypass"] = True
                 report["model_calls"] = final["_model_calls"]
                 report["passed"] = True
     finally:

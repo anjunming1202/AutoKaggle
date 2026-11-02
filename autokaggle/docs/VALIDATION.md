@@ -4,7 +4,7 @@
 
 The recovery change passed 1,063 Python tests and 149 Node client tests. Three expected warnings came from invalid prediction classes and numeric overflow. New checks cover natural negative corrections, preservation of unrelated facts, checkpoint messages and deferral, targeted scope review, interrupted server flags, saved-answer reassessment, bounded status polling, reconnection without a model retry, and expired sign-in.
 
-Read-only inspection of the hosted conversation matched the screenshot and confirmed the correction-validation failure. No hosted conversation was edited. The inspected deployment reported no container restart. The separate session reported to stop after sign-out was not identified, so its exact cause remains unconfirmed. See [Interview checkpoint and session recovery](INTERVIEW_RECOVERY.md) for the findings and all changes.
+Read-only inspection of the hosted conversation matched the screenshot and confirmed the correction-validation failure. The owner then supplied the second session link. It was idle with a completed, accepted model response and no pending answer. Its required competition choice was unresolved, but the checkpoint directed the researcher to scope controls that cannot accept server-owned settings. Signing in restored that unresolved checkpoint. No hosted conversation was edited. The inspected deployment reported no container restart. See [Interview checkpoint and session recovery](INTERVIEW_RECOVERY.md) for the findings and all changes.
 
 The final live OpenRouter check passed in two real `openai/gpt-6.1-sol` calls with medium reasoning. A temporary kernel fixture accepted the reported “don't use top hat” correction, retained the independent Fourier parameters, signed out and back into the same account, recovered an interrupted answer, reassessed saved replies, and verified retry identity. Explicit checkpoint deferral kept the scientific requirement incomplete. The test used the normal email-code/account path with captured local mail and no resend delay. It did not test Gmail delivery.
 
@@ -14,7 +14,11 @@ Live browser testing used a separate temporary store and two further real model 
 python -m autokaggle.scripts.live_interview_recovery_verify
 ```
 
-Reports and screenshots are retained only in the ignored local test-results directory. This change has not been deployed by this verification run. It does not establish scientific completeness, live email delivery, or recovery of the unidentified hosted session.
+The follow-up setting fix passed 1,069 Python tests and 152 Node tests. The extended live script passed in two medium-reasoning model calls. It also reopened the two required setting checkpoints and recorded code submissions and five daily submissions without another model call or a bypass. Browser testing signed in at the competition checkpoint, selected code, rejected an invalid zero allowance, and confirmed five submissions. An explicit synthetic definition fixture supplied the other scientific decisions. The resulting draft used one real high-reasoning model call. These seeded facts do not establish completion of a human interview. The mobile page fitted 390 × 844 with internal conversation scrolling and no document overflow.
+
+That browser draft exposed a repeated request for the already-recorded organizer email. The model context withheld the address without stating that contact was recorded. A boolean status and prompt rule now supply that information. A further live high-reasoning draft call passed in one model call: its context contained the true status without the address, and its next actions did not request the email again.
+
+Reports and screenshots are retained only in the ignored local test-results directory. This change has not been deployed by this verification run. It does not establish scientific completeness, live email delivery, or recovery of the hosted sessions after deployment.
 
 The standalone source snapshot was checked on 30 October 2026. These results describe the tested behavior. They do not establish scientific validity for a new challenge.
 

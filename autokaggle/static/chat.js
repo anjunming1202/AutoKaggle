@@ -85,7 +85,7 @@
     $("sign-out").hidden = !state.config?.private_mode; $("sign-out").disabled = !!state.signingOut; $("sign-out").textContent = state.signingOut ? "Signing out…" : "Sign out";
     $("new-project").hidden = !canCreate; $("new-project").disabled = busy || !canCreate; $("message-input").disabled = busy || !ready;
     $("send-message").disabled = busy || !ready || uncertain || blockedByError || !$("message-input").value.trim();
-    $("skip-question").hidden = !state.conversation?.current_question && !state.conversation?.scope_checkpoint; $("skip-question").textContent = state.conversation?.scope_checkpoint ? "Leave open and continue" : "Not sure yet"; $("skip-question").disabled = busy || !ready || uncertain || blockedByError;
+    $("skip-question").hidden = (!state.conversation?.current_question && !state.conversation?.scope_checkpoint) || ["competition", "submissions", "organizer"].includes(state.conversation?.scope_checkpoint?.field); $("skip-question").textContent = state.conversation?.scope_checkpoint ? "Leave open and continue" : "Not sure yet"; $("skip-question").disabled = busy || !ready || uncertain || blockedByError;
     $("draft-readme").disabled = busy || !ready || uncertain || userCount() === 0;
     const canContinue = state.conversation?.interview?.can_continue === true && state.conversation?.review?.mode !== "revision";
     for (const id of ["continue-interview", "draft-continue-interview"]) { $(id).hidden = !canContinue; $(id).disabled = busy || !ready || uncertain || blockedByError; $(id).title = `Continue with up to ${state.conversation?.interview?.followups_limit || 8} focused questions. Earlier answers are kept.`; }
@@ -216,8 +216,8 @@
     return state.bypassDrafts[key];
   }
   function updateBypassControls() {
-    const blocked = working() || !state.projectId || !state.conversation || contactRequired();
-    for (const control of document.querySelectorAll("[data-bypass-control], [data-scope-control]")) {
+    const blocked = working() || !state.projectId || !state.conversation || contactRequired() || !!state.authRequired;
+    for (const control of document.querySelectorAll("[data-bypass-control], [data-scope-control], [data-setup-control]")) {
       const scope = control.getAttribute("data-scope-control"); const retry = (scope || control.getAttribute("data-bypass-control")) === "retry";
       control.disabled = blocked || (!!state.pending && !(retry && state.pending.action === (scope ? "scope" : "bypass")));
     }
@@ -413,12 +413,36 @@
     const root = $("scope-checkpoint"); root.replaceChildren(); const checkpoint = state.conversation?.scope_checkpoint;
     const item = checkpoint && checklistItems().find((entry) => entry.id === checkpoint.field);
     root.hidden = !checkpoint || !item || contactRequired(); if (root.hidden) return;
-    root.append(element("strong", "", "This decision needs your input"));
+    const setting = ["competition", "submissions", "organizer"].includes(checkpoint.field);
+    root.append(element("strong", "", setting ? "Choose a required organizer setting" : "This decision needs your input"));
     root.append(element("p", "", checkpoint.reason || "We have asked about this detail twice. Review a decision, delegate an allowed choice, or record an exception."));
+    if (setting && state.conversation.status !== "error" && !state.pending) {
+      const actions = element("div", "scope-checkpoint-actions");
+      const choice = (label, answer) => {
+        const control = element("button", "button button-secondary button-small", label); control.type = "button";
+        control.setAttribute("data-setup-control", "choice"); control.disabled = working() || !!state.authRequired;
+        control.addEventListener("click", () => dispatch("messages", answer)); actions.append(control);
+        return control;
+      };
+      if (checkpoint.field === "competition") {
+        root.append(element("p", "", "Prediction: participants receive test inputs and submit predictions. Code: the submitted program is evaluated on hidden inputs. Select one to continue."));
+        choice("Prediction submissions", "Competition: prediction"); choice("Code submissions", "Competition: code");
+      } else if (checkpoint.field === "submissions") {
+        root.append(element("p", "", "Confirm the number of submissions allowed per team per UTC day. The default is five."));
+        const label = element("label", "", "Daily submission allowance"); label.htmlFor = "checkpoint-submission-limit";
+        const limit = element("input", "checkpoint-setting-input"); limit.id = "checkpoint-submission-limit"; limit.type = "number"; limit.min = "1"; limit.max = "1000"; limit.step = "1"; limit.inputMode = "numeric";
+        limit.value = String(state.conversation.setup?.daily_submission_limit || 5); limit.setAttribute("data-setup-control", "input"); limit.disabled = working() || !!state.authRequired;
+        const error = element("p", "scope-feedback error", ""); error.setAttribute("role", "alert"); error.hidden = true;
+        const confirm = element("button", "button button-secondary button-small", "Confirm daily allowance"); confirm.type = "button"; confirm.setAttribute("data-setup-control", "choice"); confirm.disabled = working() || !!state.authRequired;
+        confirm.addEventListener("click", () => { const value = Number(limit.value); if (!Number.isInteger(value) || value < 1 || value > 1000) { error.hidden = false; error.textContent = "Enter a whole number from 1 to 1,000."; return; } error.hidden = true; dispatch("messages", "Daily submissions: " + value); });
+        root.append(label, limit, error); actions.append(confirm);
+      } else root.append(element("p", "", "Use the private email step to enter your correspondence address."));
+      root.append(actions); return;
+    }
     const proposal = typeof checkpoint.proposed_answer === "string" ? checkpoint.proposed_answer : "";
     if (proposal) root.append(element("p", "scope-proposal", `Recorded details · review before accepting: ${proposal}`));
     if (!item.can_accept_scope) {
-      root.append(element("p", "", "The last saved answer must finish before you can confirm a scope decision. Retry that answer first."));
+      root.append(element("p", "", "A saved answer still needs assessment. Retry a failed response, or send an answer in chat before confirming the scope."));
       if (state.conversation?.can_retry || state.pending) { const recover = element("button", "button button-secondary button-small", "Retry saved answer"); recover.type = "button"; recover.setAttribute("data-conversation-retry", ""); recover.disabled = working() || !!state.authRequired; recover.addEventListener("click", retry); root.append(recover); }
       return;
     }

@@ -39,7 +39,7 @@ def test_chat_journey_persistence_download_and_owner_boundary(chat_app):
         assert len(initial["checklist"]) == 17
         assert all(item["understanding"]["score"] == 0 for item in initial["checklist"] if item["owner"] == "researcher" and item["id"] != "organizer")
         assert next(item for item in initial["checklist"] if item["id"] == "trial")["understanding"]["score"] is None
-        assert [stage["id"] for stage in initial["interview"]["stages"]] == ["problem", "approach", "baseline"]
+        assert [stage["id"] for stage in initial["interview"]["stages"]] == ["problem", "approach", "baseline", "setup"]
         assert initial["mode"] == "rules"
         assert client.get(root + "/readme.md").status_code == 404
         sent = action(client, root, "/messages", message="Predict whether a synthetic material remains stable after a stress test.")

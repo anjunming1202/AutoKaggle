@@ -118,6 +118,54 @@ def test_failed_reassessment_keeps_all_unprocessed_answers(monkeypatch):
     assert state["_unprocessed"][0]["message_id"] == earlier["id"]
 
 
+@pytest.mark.parametrize("email", ["", "private-organizer@example.org"])
+def test_model_knows_contact_status_without_receiving_the_address(tmp_path, email):
+    from autokaggle import onboarding_setup
+    from autokaggle.store import Store
+    import json
+    project = Store(tmp_path).create("fixture-owner", "Private contact status")
+    onboarding_setup.update(project, {"organizer_email": email})
+    context = c._platform_context(project)
+    assert context["organizer_contact_recorded"] is bool(email)
+    assert "organizer_email" not in context["organizer_settings"]
+    if email:
+        assert email not in json.dumps(context)
+
+
+@pytest.mark.parametrize("field,criterion,text,setting,value", [
+    ("competition", "choice", "Competition: prediction", "competition_type", "prediction"),
+    ("competition", "choice", "Competition: code", "competition_type", "code"),
+    ("submissions", "allowance", "Daily submissions: 5", "daily_submission_limit", 5),
+    ("submissions", "allowance", "Daily submissions: 12", "daily_submission_limit", 12),
+])
+def test_required_setting_checkpoint_accepts_valid_choice_and_advances(monkeypatch, field, criterion, text, setting, value):
+    project = kernel_project(); state = project["conversation"]
+    state["_interview_round"] = 5
+    project["_model_calls"] = 41
+    state["_interview_call_start"] = 40
+    state["_criterion_asks"][field + "." + criterion] = 2
+    state["scope_checkpoint"] = None
+    c._checkpoint(state, field, readiness.REQUIREMENTS[field][0])
+    before = c.conversation_view(project)
+    assert before["interview"]["current_stage"] == "setup"
+    assert next(item for item in before["checklist"] if item["id"] == field)["active"]
+    assert not next(item for item in before["checklist"] if item["id"] == field)["can_accept_scope"]
+    assert "cannot be resolved through scope acceptance" in state["messages"][-1]["content"]
+    calls = provider(monkeypatch, [])
+    c.submit_message(project, text, "required-setting-choice")
+    assert project["setup"][setting] == value
+    if field == "submissions":
+        assert project["setup"]["submissions_confirmed"]
+    assert state["items"][field]["status"] == "answered"
+    assert state["status"] == "idle" and not calls
+    active = state["current_question"] or state.get("scope_checkpoint")
+    assert active is None or active["field"] != field
+    assert not any(m["content"] == "Skip this question." for m in state["messages"])
+    saved = copy.deepcopy(project)
+    c.submit_message(project, text, "required-setting-choice")
+    assert project == saved
+
+
 @pytest.mark.parametrize("orphan", [{"_inflight": True}, {"status": "working"}])
 def test_reopening_orphaned_request_exposes_retry_without_restart(tmp_path, monkeypatch, orphan):
     monkeypatch.setenv("AUTOKAGGLE_MODE", "rules")
