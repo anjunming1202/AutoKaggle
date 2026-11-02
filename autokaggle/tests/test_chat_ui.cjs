@@ -209,7 +209,7 @@ test("All error states block Send and Skip but allow editing and drafting", () =
     const { $ } = dom();
     $("message-input").value = "A new correction";
     const state = { projectId: "p1", pending: null, conversation: { status: "error", can_retry, current_question: { text: "What is the target?" }, messages: [{ role: "user", content: "My problem" }] } };
-    const update = uiFunction("updateControls", { state, $, working: () => false, userCount: () => 1, contactRequired: () => false, reviewAvailable: () => true, renderContact: noop, renderReviewControls: noop, renderError: noop, updateSetupControls: noop, updateBypassControls: noop, updateWorkflowControls: noop, updateDataControls: noop });
+    const update = uiFunction("updateControls", { state, $, document: { querySelectorAll: () => [] }, working: () => false, userCount: () => 1, contactRequired: () => false, reviewAvailable: () => true, renderContact: noop, renderReviewControls: noop, renderError: noop, updateSetupControls: noop, updateBypassControls: noop, updateWorkflowControls: noop, updateDataControls: noop });
     update();
     assert.equal($("send-message").disabled, true);
     assert.equal($("skip-question").disabled, true);
@@ -1074,13 +1074,14 @@ test("Connection failures still offer recovery and review-only sessions receive 
 });
 
 function scopeHarness(api = async () => ({ status: "idle", messages: [], checklist: [] }), itemExtra = {}) {
-  const { $ } = dom(); const cache = new Map(); const requests = [];
+  const { $ } = dom(); const cache = new Map(); const requests = []; const actions = [];
   const item = { id: "task", label: "Task", can_accept_scope: true, value: "Predict stability over one million orbits.", requirements: [
     { id: "outcome", label: "Outcome", status: "missing", can_delegate: false },
     { id: "format", label: "Output format", status: "missing", can_delegate: true, delegation_policy: "Choose a supported format and record its schema." },
   ], ...itemExtra };
   const state = { projectId: "p1", conversation: { status: "idle", checklist: [item] }, pending: null, scopeDrafts: {}, busy: false };
   const shared = { state, $, working: () => state.busy, contactRequired: () => false, checklistItems: () => state.conversation.checklist || [],
+    actions, retry: () => actions.push("retry"), dispatch: (action) => actions.push(action),
     pendingKey: (id) => `autokaggle-chat-pending:${id}`, readStorage: (key) => cache.get(key) || null, writeStorage: (key, value) => cache.set(key, value),
     element: node, renderSummary: noop, renderConversation: noop, refreshWorkflow: async () => {},
     rememberPending: (value) => { state.pending = value; }, setBusy: (value) => { state.busy = value; }, base: () => "/api/projects/p1/conversation",
@@ -1172,8 +1173,8 @@ test("Removal sends only the field, removal flag, and request identity", async (
 test("Checkpoint actions show unaccepted proposals and permitted delegation without sending a request", () => {
   const h = scopeHarness(); h.state.conversation.scope_checkpoint = { field: "task", requirement_id: "format", reason: "This format decision is still open.", proposed_answer: "Use an ID and probability CSV.", can_delegate: true };
   h.checkpoint(); const nodes = descendants(h.$("scope-checkpoint"));
-  assert.equal(h.$("scope-checkpoint").hidden, false); assert.ok(nodes.some((entry) => entry.textContent.includes("not yet accepted")));
-  assert.deepEqual(nodes.filter((entry) => entry.tag === "button").map((entry) => entry.textContent), ["Review proposal", "Let the agent choose", "Record an exception"]);
+  assert.equal(h.$("scope-checkpoint").hidden, false); assert.ok(nodes.some((entry) => entry.textContent.includes("review before accepting")));
+  assert.deepEqual(nodes.filter((entry) => entry.tag === "button").map((entry) => entry.textContent), ["Review proposal", "Let the agent choose", "Record an exception", "Leave open and continue"]);
   assert.equal(h.requests.length, 0); nodes.find((entry) => entry.textContent === "Review proposal").events.click();
   assert.match(h.scopeDraft(h.item).summary, /Use an ID and probability CSV/); assert.equal(h.requests.length, 0);
 });
@@ -1246,4 +1247,84 @@ test("The visible checklist progress includes organizer decisions in its resolve
     { id: "d", status: "confirmed" }, { id: "e", status: "confirmed" },
   ] }] });
   h.renderChecklist(); assert.match(h.$("knowledge-update").textContent, /5 of 5 details resolved \(3 recorded · 2 confirmed\)/);
+});
+
+test("An interrupted status check reconnects with GET and does not invent a model retry", async () => {
+  const state = { projectId: "p1", connectionUncertain: true, conversation: { status: "error" }, pending: null };
+  const calls = [];
+  const retry = uiFunction("retry", { state, working: () => false, base: () => "/conversation", runNavigation: async (action) => action(),
+    api: async (path, options) => { calls.push({ path, options }); return { status: "idle", messages: [] }; },
+    renderConversation: noop, refreshWorkflow: async () => {}, dispatch: () => { throw new Error("Must reconnect before model retry"); } });
+  await retry();
+  assert.deepEqual(calls, [{ path: "/conversation", options: undefined }]);
+  assert.equal(state.connectionUncertain, false); assert.equal(state.conversation.status, "idle");
+});
+
+test("Reconnect keeps an unconfirmed request until its own POST acknowledges it", async () => {
+  const pending = { action: "messages", request_id: "same-id", message: "Keep my correction" };
+  const state = { projectId: "p1", connectionUncertain: true, conversation: { status: "error" }, pending };
+  await uiFunction("retry", { state, working: () => false, base: () => "/conversation", runNavigation: async (action) => action(),
+    api: async () => ({ status: "idle", messages: [] }), renderConversation: noop, refreshWorkflow: async () => {} })();
+  assert.equal(state.pending, pending);
+});
+
+test("A continuously busy server cannot leave the status spinner running forever", async () => {
+  const state = { polling: false, conversation: { status: "working" } };
+  let calls = 0;
+  const harness = pollHarness(state, async () => { calls += 1; return { status: "working" }; });
+  await harness.poll();
+  assert.equal(calls, 300); assert.equal(state.polling, false);
+  assert.equal(state.connectionUncertain, true); assert.equal(state.conversation.status, "error");
+  assert.equal(harness.calls.errors, 1);
+});
+
+test("A lost sign-in stops status polling on the first unauthorized response", async () => {
+  const state = { polling: false, conversation: { status: "working" } };
+  let calls = 0;
+  const harness = pollHarness(state, async () => { calls += 1; const error = new Error("Sign in again"); error.status = 401; throw error; });
+  await harness.poll(); assert.equal(calls, 1); assert.equal(state.polling, false); assert.equal(state.connectionUncertain, true);
+});
+
+test("Expired sign-in offers a link back to this saved project", () => {
+  const { $ } = dom(); const state = { projectId: "p1", authRequired: true, conversation: { status: "error" } };
+  $("data-dialog").open = true; $("data-dialog").close = () => { $("data-dialog").open = false; };
+  state.dismissedError = "Sign in to continue:Your sign-in has expired. Sign in again to reopen your saved conversation. Your recorded answers are kept.";
+  uiFunction("renderError", { state, $, working: () => false })();
+  assert.equal($("retry-action").hidden, true); assert.equal($("sign-in-again").hidden, false);
+  assert.equal($("sign-in-again").href, "/login?next=%2F%3Fproject%3Dp1");
+  assert.match($("error-text").textContent, /recorded answers are kept/i);
+  assert.equal($("data-dialog").open, false); assert.equal($("error-banner").hidden, false); assert.equal($("dismiss-error").hidden, true);
+});
+
+test("A failed checkpoint shows a usable saved-answer retry instead of disabled review links", () => {
+  const h = scopeHarness(undefined, { can_accept_scope: false });
+  h.state.conversation.scope_checkpoint = { field: "task", requirement_id: "format", reason: "A source needs review." };
+  h.state.conversation.can_retry = true;
+  h.checkpoint(); const buttons = descendants(h.$("scope-checkpoint")).filter((n) => n.tag === "button");
+  assert.deepEqual(buttons.map((n) => n.textContent), ["Retry saved answer"]);
+  assert.equal(buttons[0].disabled, false); buttons[0].events.click(); assert.deepEqual(h.actions, ["retry"]);
+});
+
+test("Checkpoint deferral is an explicit action and target review does not confirm unrelated criteria", () => {
+  const h = scopeHarness();
+  h.state.conversation.scope_checkpoint = { field: "task", requirement_id: "format", proposed_answer: "Use CSV." };
+  h.checkpoint(); descendants(h.$("scope-checkpoint")).find((n) => n.textContent === "Leave open and continue").events.click();
+  assert.deepEqual(h.actions, ["skip"]);
+  h.openScope("task", "format", "confirmed", "Use CSV.");
+  assert.equal(h.scopeDraft(h.item).resolutions.format.mode, "confirmed");
+  assert.equal(h.scopeDraft(h.item).resolutions.outcome.mode, "unresolved");
+});
+
+test("Private project 404 checks account status and offers sign-in only after expiry", async () => {
+  for (const auth_kind of ["anonymous", "user"]) {
+    const state = { config: { private_mode: true } }; const paths = [];
+    const deps = { state, window: { setTimeout: () => 0, clearTimeout: noop }, readableError: (detail) => detail,
+      fetch: async (path) => { paths.push(path); const account = path === "/api/access"; return { ok: account, status: account ? 200 : 404,
+        headers: { get: () => "application/json" }, json: async () => account ? { auth_kind } : { detail: "Challenge not found" } }; } };
+    deps.api = (...args) => request(...args);
+    const request = uiFunction("api", deps);
+    await assert.rejects(request("/api/projects/p1/conversation"), (error) => error.status === (auth_kind === "anonymous" ? 401 : 404));
+    assert.deepEqual(paths, ["/api/projects/p1/conversation", "/api/access"]);
+    assert.equal(!!state.authRequired, auth_kind === "anonymous");
+  }
 });

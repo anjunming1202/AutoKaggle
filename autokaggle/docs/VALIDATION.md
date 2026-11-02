@@ -1,5 +1,21 @@
 # Validation
 
+## Interview and sign-in recovery — 2 November 2026
+
+The recovery change passed 1,063 Python tests and 149 Node client tests. Three expected warnings came from invalid prediction classes and numeric overflow. New checks cover natural negative corrections, preservation of unrelated facts, checkpoint messages and deferral, targeted scope review, interrupted server flags, saved-answer reassessment, bounded status polling, reconnection without a model retry, and expired sign-in.
+
+Read-only inspection of the hosted conversation matched the screenshot and confirmed the correction-validation failure. No hosted conversation was edited. The inspected deployment reported no container restart. The separate session reported to stop after sign-out was not identified, so its exact cause remains unconfirmed. See [Interview checkpoint and session recovery](INTERVIEW_RECOVERY.md) for the findings and all changes.
+
+The final live OpenRouter check passed in two real `openai/gpt-6.1-sol` calls with medium reasoning. A temporary kernel fixture accepted the reported “don't use top hat” correction, retained the independent Fourier parameters, signed out and back into the same account, recovered an interrupted answer, reassessed saved replies, and verified retry identity. Explicit checkpoint deferral kept the scientific requirement incomplete. The test used the normal email-code/account path with captured local mail and no resend delay. It did not test Gmail delivery.
+
+Live browser testing used a separate temporary store and two further real model calls. It recovered an interrupted correction through the visible Retry saved answer control, signed out and back in, resumed the same conversation, and submitted another answer successfully. An expired local session also exercised the private-project 404 path. The data dialog closed and exposed a sign-in link back to the same project. The recovery banner fitted a 390 × 844 viewport without horizontal or document overflow. No browser warnings or errors were observed.
+
+```sh
+python -m autokaggle.scripts.live_interview_recovery_verify
+```
+
+Reports and screenshots are retained only in the ignored local test-results directory. This change has not been deployed by this verification run. It does not establish scientific completeness, live email delivery, or recovery of the unidentified hosted session.
+
 The standalone source snapshot was checked on 30 October 2026. These results describe the tested behavior. They do not establish scientific validity for a new challenge.
 
 ## Model response recovery — 30 October 2026

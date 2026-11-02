@@ -532,7 +532,7 @@ def sync_legacy_answers(project, manual_fields=()):
 
 def recover_interrupted(project):
     state = project.get("conversation")
-    if not isinstance(state, dict) or not state.get("_inflight"):
+    if not isinstance(state, dict) or not (state.get("_inflight") or state.get("status") == "working"):
         return False
     retry = bool(state.get("_pending")) and _call_count(project) < MAX_CALLS
     state.update(_inflight=False, status="error", error="The response was interrupted. Your message and recorded answers are saved. " + ("Retry to continue." if retry else "Create a draft from the saved answers."), can_retry=retry)
@@ -707,6 +707,14 @@ def _evidence(text, current):
     raise ModelResponseError("Evidence was not in the current user message")
 
 
+def _explicit_correction(text):
+    """Recognize direct changes without requiring a special correction keyword."""
+    return bool(re.search(
+        r"\b(correction|correcting|actually|instead|replace|revise|update|change|now|meant|wrong|should be|remove|exclude|omit|drop)\b"
+        r"|\b(?:do\s+not|don['’]t|no\s+longer|stop)\s+(?:use|using|include|including|allow|allowing|require|requiring|consider|considering)\b"
+        r"|\b(?:only|just)\s+use\b|\buse\s+only\b", text, re.I))
+
+
 def _validate_scope(parsed, current, state):
     # Older saved/test provider responses can be read, but cannot establish
     # requirement completion. The live provider schema requires assessments.
@@ -739,7 +747,7 @@ def _validate_scope(parsed, current, state):
             raise ModelResponseError("Invalid correction excerpts")
         if operation == "append" and supersedes:
             raise ModelResponseError("An append cannot remove previous facts")
-        if operation == "correct" and not re.search(r"\b(correction|correcting|actually|instead|replace|revise|update|change|now|meant|wrong|should be)\b", current, re.IGNORECASE):
+        if operation == "correct" and not _explicit_correction(current):
             raise ModelResponseError("A replacement needs an explicit correction")
         if operation == "correct":
             old = state["items"][key]["value"]
@@ -810,7 +818,7 @@ def _validate_requirements(parsed, current, state, updates):
         explicit_correction = bool(accepted and accepted["mode"] == "confirmed" and status in {"missing", "deferred"}
             and any(quote in current for quote in evidence)
             and any(update["field"] == field and any(quote in update["evidence"] for quote in evidence) for update in updates)
-            and re.search(r"\b(correction|correcting|actually|instead|replace|revise|update|change|now|meant|wrong|should be)\b", current, re.I))
+            and _explicit_correction(current))
         if status == "conflicting":
             prior = _source_quotes(previous)
             resolved = readiness.scope_resolution(field, state["items"][field], identifier)
@@ -1111,13 +1119,17 @@ def _checkpoint(state, field, criterion, reason=None):
                   "reason": reason or record.get("reason") or criterion["description"],
                   "can_delegate": readiness.can_delegate(field, criterion["id"])}
     # A proposal may quote a saved decision. Never invent a scientific default.
-    if record.get("value") and _has_recorded_facts(record["value"]):
+    if (record.get("value") and _has_recorded_facts(record["value"])
+            and not any(span in record["value"] for span in state.get("_superseded_evidence", []))):
         checkpoint["proposed_answer"] = record["value"]
     previous = state.get("scope_checkpoint")
     state.update(scope_checkpoint=checkpoint, current_question=None, _pending=None)
     _reset_error(state)
-    if previous != checkpoint:
+    same_decision = previous and all(previous.get(key) == checkpoint[key] for key in ("field", "requirement_id"))
+    if not same_decision:
         _message(state, "assistant", f"We have not resolved {criterion['label'].lower()}. Open this checklist item to confirm the scope, record an explicit exception, or supply a new decision. I will not ask the same detail again automatically.")
+    elif state["messages"] and state["messages"][-1]["role"] == "user":
+        _message(state, "assistant", "Your update is saved. The remaining gap is shown below. You can reply with a decision, review the recorded scope, or leave this detail open and continue.")
 
 
 def _needs_checkpoint(state):
@@ -1129,7 +1141,8 @@ def _needs_checkpoint(state):
     if not state.get("_requirements_assessed") and state["items"][field]["status"] == "answered":
         state["scope_checkpoint"] = None
         return False
-    if criterion and not readiness.criterion_result(field, state["items"][field], criterion)[0] and state["_criterion_asks"].get(field + "." + identifier, 0) >= 2:
+    deferred = state["items"][field].get("requirements", {}).get(identifier, {}).get("status") == "deferred"
+    if criterion and not deferred and not readiness.criterion_result(field, state["items"][field], criterion)[0] and state["_criterion_asks"].get(field + "." + identifier, 0) >= 2:
         _checkpoint(state, field, criterion)
         return True
     state["scope_checkpoint"] = None
@@ -1457,11 +1470,13 @@ def _process_message(project, reserve):
         _draft(project, reserve)
         return
     try:
+        reviewed_ids = {entry["message_id"] for entry in state.get("_unprocessed", [])}
         context = {"current_message": text, "current_question": state["current_question"], "recorded_items": state["items"],
                    "superseded_evidence": state.get("_superseded_evidence", []),
                    "definition": readiness.DEFINITION, "required_fact_criteria": readiness.REQUIREMENTS,
                    "definition_readiness": readiness.assess(state), "optional_fields": sorted(readiness.OPTIONAL_FIELDS),
                    "criterion_asks": state["_criterion_asks"], "scope_checkpoint": state.get("scope_checkpoint"),
+                   "saved_answers_to_reassess": copy.deepcopy(state.get("_unprocessed", [])),
                    "organizer_scope_decisions": readiness.assess(state)["scope_decisions"],
                    "manual_bypasses": readiness.assess(state)["bypasses"],
                    "saved_project_context": _saved_project_context(project),
@@ -1482,7 +1497,7 @@ def _process_message(project, reserve):
         _apply(state, updates, message_id)
         if "requirements" in parsed:
             _apply_requirements(state, requirements)
-        state["_unprocessed"] = [m for m in state.get("_unprocessed", []) if m["message_id"] != message_id]
+        state["_unprocessed"] = [m for m in state.get("_unprocessed", []) if m["message_id"] not in reviewed_ids]
         _advance(project, reserve, parsed, force_draft=was_draft)
     except Exception as exc:
         _fail(state, exc, _call_count(project) < MAX_CALLS)
@@ -1533,12 +1548,14 @@ def skip_question(project, request_id, reserve=None):
     if request_id in state["_requests"]:
         _request(state, request_id, "skip")
         return
-    if state["status"] == "error" or state["current_question"] is None:
+    active = state["current_question"] or state.get("scope_checkpoint")
+    if state["status"] == "error" or active is None:
         raise ValueError("There is no active question to skip. Retry the response or create a draft.")
     if not _request(state, request_id, "skip"):
         return
-    _message(state, "user", "Skip this question.")
-    _defer(state, state["current_question"]["field"], "Skip this question.", state["messages"][-1]["id"], state["current_question"].get("requirement_id"))
+    text = "Leave this decision open and continue." if state.get("scope_checkpoint") else "Skip this question."
+    _message(state, "user", text)
+    _defer(state, active["field"], text, state["messages"][-1]["id"], active.get("requirement_id"))
     _advance(project, reserve)
 
 

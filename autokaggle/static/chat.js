@@ -25,11 +25,20 @@
   }
   function readableError(detail) { if (typeof detail === "string") return detail; if (Array.isArray(detail)) return detail.map((item) => item.msg || "Invalid input").join("; "); return "The request could not be completed. Please try again."; }
   async function api(path, options = {}) {
-    const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), options.method === "POST" && path.endsWith("/workflow") ? 600000 : 150000);
+    const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), options.method === "POST" && path.endsWith("/workflow") ? 600000 : options.method ? 150000 : 15000);
     try {
       const response = await fetch(path, { credentials: "same-origin", ...options, signal: controller.signal, headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers } });
       const data = (response.headers.get("content-type") || "").includes("application/json") ? await response.json() : null;
-      if (!response.ok) { const error = new Error(readableError(data?.detail)); error.status = response.status; throw error; }
+      if (!response.ok) {
+        const error = new Error(readableError(data?.detail)); error.status = response.status;
+        // Project endpoints keep unknown and unauthorized IDs indistinguishable.
+        // Check sign-in separately before treating a 404 as an unavailable project.
+        if (response.status === 404 && state.config?.private_mode && path.startsWith("/api/projects/")) {
+          try { const access = await api("/api/access"); if (access.auth_kind === "anonymous") error.status = 401; } catch (_) { /* Preserve the project error if account status is unavailable. */ }
+        }
+        if (error.status === 401) { state.authRequired = true; error.message = "Your sign-in has expired. Sign in again to reopen your saved conversation."; }
+        throw error;
+      }
       if (!data) throw new Error("The server returned an unexpected response. Please try again.");
       return data;
     } catch (error) { if (error.name === "AbortError") throw new Error("The connection timed out. Your request may still be running. Retry to recover its result."); if (error instanceof TypeError) throw new Error("The connection was interrupted. Your text is saved here. Retry when the connection returns."); throw error; }
@@ -71,12 +80,12 @@
   function userCount() { return (state.conversation?.messages || []).filter((message) => message.role === "user").length; }
   function setBusy(value, label = "Thinking through your challenge…") { state.busy = value; $("thinking-text").textContent = label; updateControls(); if (state.pending?.action === "messages") renderMessages(true); }
   function updateControls() {
-    const busy = working(); const ready = !!state.projectId && !!state.conversation && !contactRequired(); const uncertain = !!state.pending && !busy; const blockedByError = state.conversation?.status === "error";
+    const busy = working(); const ready = !!state.projectId && !!state.conversation && !contactRequired() && !state.authRequired; const uncertain = !!state.pending && !busy; const blockedByError = state.conversation?.status === "error";
     const canCreate = state.config?.can_create_projects !== false;
     $("sign-out").hidden = !state.config?.private_mode; $("sign-out").disabled = !!state.signingOut; $("sign-out").textContent = state.signingOut ? "Signing out…" : "Sign out";
     $("new-project").hidden = !canCreate; $("new-project").disabled = busy || !canCreate; $("message-input").disabled = busy || !ready;
     $("send-message").disabled = busy || !ready || uncertain || blockedByError || !$("message-input").value.trim();
-    $("skip-question").hidden = !state.conversation?.current_question || !!state.conversation?.scope_checkpoint; $("skip-question").disabled = busy || !ready || uncertain || blockedByError;
+    $("skip-question").hidden = !state.conversation?.current_question && !state.conversation?.scope_checkpoint; $("skip-question").textContent = state.conversation?.scope_checkpoint ? "Leave open and continue" : "Not sure yet"; $("skip-question").disabled = busy || !ready || uncertain || blockedByError;
     $("draft-readme").disabled = busy || !ready || uncertain || userCount() === 0;
     const canContinue = state.conversation?.interview?.can_continue === true && state.conversation?.review?.mode !== "revision";
     for (const id of ["continue-interview", "draft-continue-interview"]) { $(id).hidden = !canContinue; $(id).disabled = busy || !ready || uncertain || blockedByError; $(id).title = `Continue with up to ${state.conversation?.interview?.followups_limit || 8} focused questions. Earlier answers are kept.`; }
@@ -84,6 +93,7 @@
     $("download-readme").disabled = !state.conversation?.readme || busy;
     $("thinking-message").hidden = !busy; $("message-form").setAttribute("aria-busy", String(busy));
     $("retry-action").disabled = busy;
+    for (const control of document.querySelectorAll("[data-conversation-retry]")) control.disabled = busy || !!state.authRequired;
     $("answer-in-chat").disabled = busy || !ready;
     updateWorkflowControls(); updateDataControls(); renderContact(); renderReviewControls(); updateBypassControls();
     renderError();
@@ -91,13 +101,20 @@
   function showError(text, heading = "Something needs attention") { state.localError = { text, heading }; state.dismissedError = null; renderError(); }
   function renderError() {
     let error = state.localError;
+    if (state.authRequired) error = { heading: "Sign in to continue", text: "Your sign-in has expired. Sign in again to reopen your saved conversation. Your recorded answers are kept." };
     if (!error && state.conversation?.status === "error") error = { heading: "We could not finish that step", text: state.conversation.error || "Please retry, or draft a README from the answers already recorded." };
     if (!error && state.pending && !working()) error = { heading: "A previous request needs to be checked", text: "Retry to recover the result. The same request ID prevents a duplicate message." };
     const key = error ? `${error.heading}:${error.text}` : null;
-    $("error-banner").hidden = !error || state.dismissedError === key;
+    $("error-banner").hidden = !error || (!state.authRequired && state.dismissedError === key);
+    $("dismiss-error").hidden = !!state.authRequired;
     if (error) { $("error-heading").textContent = error.heading; $("error-text").textContent = error.text; }
-    $("retry-action").hidden = !!state.projectUnavailable || (!state.pending && !state.conversation?.can_retry && !!state.conversation);
-    $("retry-action").textContent = !state.conversation ? "Reconnect" : "Retry";
+    $("retry-action").hidden = !!state.authRequired || !!state.projectUnavailable || (!state.connectionUncertain && !state.pending && !state.conversation?.can_retry && !!state.conversation);
+    $("retry-action").textContent = state.connectionUncertain || !state.conversation ? "Reconnect" : "Retry";
+    $("sign-in-again").hidden = !state.authRequired;
+    if (state.authRequired) {
+      $("sign-in-again").href = "/login?next=" + encodeURIComponent(state.projectId ? "/?project=" + encodeURIComponent(state.projectId) : "/");
+      for (const id of ["summary-dialog", "data-dialog"]) if ($(id).open) { $(id).close(); $("sign-in-again").focus(); }
+    }
   }
   function decodeReferences(text) {
     const names = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
@@ -292,6 +309,7 @@
     const draft = scopeDraft(item); draft.open = true; draft.error = null;
     const criterion = item.requirements?.find((entry) => entry.id === requirementId);
     if (criterion) {
+      for (const other of scopeCriteria(item)) if (other.id !== criterion.id && !draft.resolutions[other.id]) draft.resolutions[other.id] = { mode: "unresolved", detail: "" };
       const chosen = mode === "delegated" && !criterion.can_delegate ? "confirmed" : mode;
       draft.resolutions[criterion.id] = { mode: chosen, detail: draft.resolutions[criterion.id]?.detail || "" };
       if (chosen === "confirmed" && proposal && !draft.summary.includes(proposal)) draft.summary = draft.summary ? `${draft.summary}\n\nProposed decision to review: ${proposal}` : proposal;
@@ -395,15 +413,21 @@
     const root = $("scope-checkpoint"); root.replaceChildren(); const checkpoint = state.conversation?.scope_checkpoint;
     const item = checkpoint && checklistItems().find((entry) => entry.id === checkpoint.field);
     root.hidden = !checkpoint || !item || contactRequired(); if (root.hidden) return;
-    root.append(element("strong", "", "Let’s make this decision explicit"));
+    root.append(element("strong", "", "This decision needs your input"));
     root.append(element("p", "", checkpoint.reason || "We have asked about this detail twice. Review a decision, delegate an allowed choice, or record an exception."));
     const proposal = typeof checkpoint.proposed_answer === "string" ? checkpoint.proposed_answer : "";
-    if (proposal) root.append(element("p", "scope-proposal", `Agent proposal · not yet accepted: ${proposal}`));
+    if (proposal) root.append(element("p", "scope-proposal", `Recorded details · review before accepting: ${proposal}`));
+    if (!item.can_accept_scope) {
+      root.append(element("p", "", "The last saved answer must finish before you can confirm a scope decision. Retry that answer first."));
+      if (state.conversation?.can_retry || state.pending) { const recover = element("button", "button button-secondary button-small", "Retry saved answer"); recover.type = "button"; recover.setAttribute("data-conversation-retry", ""); recover.disabled = working() || !!state.authRequired; recover.addEventListener("click", retry); root.append(recover); }
+      return;
+    }
     const actions = element("div", "scope-checkpoint-actions");
     for (const [mode, label] of [["confirmed", proposal ? "Review proposal" : "Review this decision"], ...(checkpoint.can_delegate ? [["delegated", "Let the agent choose"]] : []), ["exception", "Record an exception"]]) {
       const button = element("button", "text-button", label); button.type = "button"; button.setAttribute("data-scope-control", "checkpoint"); button.disabled = working() || !!state.pending || !item.can_accept_scope;
       button.addEventListener("click", () => openScope(item.id, checkpoint.requirement_id, mode, proposal)); actions.append(button);
     }
+    const later = element("button", "text-button", "Leave open and continue"); later.type = "button"; later.setAttribute("data-scope-control", "checkpoint"); later.disabled = working() || !!state.pending; later.addEventListener("click", () => dispatch("skip")); actions.append(later);
     root.append(actions);
   }
   function renderReadiness() {
@@ -839,16 +863,18 @@
   }
   async function pollWorking() {
     if (state.polling) return; state.polling = true; updateControls(); let failures = 0; let completed = false;
+    const deadline = Date.now() + 300000; let checks = 0;
     try {
       while (state.conversation?.status === "working") {
+        if (Date.now() >= deadline || checks++ >= 300) { showError("This request is taking longer than expected. Reconnect to check its saved result.", "Check the saved response"); break; }
         await new Promise((resolve) => window.setTimeout(resolve, 1000));
         try { state.conversation = await api(base()); failures = 0; renderConversation({ scroll: true }); }
-        catch (error) { failures += 1; if (failures >= 3) { showError("The status connection was interrupted. Reconnect to check the current request.", "Connection interrupted"); break; } }
+        catch (error) { failures += 1; if (error.status === 401 || failures >= 3) { showError(error.status === 401 ? error.message : "The status connection was interrupted. Reconnect to check the current request.", error.status === 401 ? "Sign in to continue" : "Connection interrupted"); break; } }
       }
       completed = state.conversation?.status !== "working";
       // GET reports project activity, not acknowledgement of this tab's request.
       // Keep the pending payload and ID until its own POST returns successfully.
-    } finally { state.polling = false; if (!completed && state.conversation) state.conversation = { ...state.conversation, status: "error", error: "The connection needs to be checked. The server may still be working.", can_retry: true }; updateControls(); }
+    } finally { state.polling = false; state.connectionUncertain = !completed; if (!completed && state.conversation) state.conversation = { ...state.conversation, status: "error", error: "The connection needs to be checked. The server may still be working.", can_retry: true }; updateControls(); }
   }
   async function openProject(id) {
     const requestedView = new URLSearchParams(window.location.search).get("view");
@@ -856,6 +882,7 @@
     for (const name of ["summary-dialog", "data-dialog"]) if ($(name).open) $(name).close();
     $("message-input").value = "";
     state.conversation = await api(base());
+    state.authRequired = false; state.connectionUncertain = false;
     state.pending = loadPending(id); $("message-input").value = readStorage(draftKey(id)) || ""; writeStorage(LAST_PROJECT, id);
     renderConversation({ scroll: true }); if (state.conversation.status === "working") await pollWorking();
     await refreshWorkflow(); if (requestedView === "review" && reviewAvailable()) setView("review");
@@ -929,6 +956,15 @@
   }
   async function retry() {
     if (working()) return;
+    if (state.connectionUncertain && state.projectId) {
+      await runNavigation(async () => {
+        state.conversation = await api(base()); state.connectionUncertain = false; state.localError = null; state.dismissedError = null;
+        renderConversation({ scroll: true });
+        if (state.conversation.status === "working") await pollWorking();
+        await refreshWorkflow();
+      });
+      return;
+    }
     if (!state.conversation) { await runNavigation(async () => { if (state.projectId) await openProject(state.projectId); else await initializeProject(); }); return; }
     if (state.pending?.action === "scope") { await saveScope(state.pending.field, state.pending.remove, state.pending); return; }
     if (state.pending?.action === "bypass") { await saveBypass(state.pending.field, state.pending.requirement_id, state.pending.remove, state.pending); return; }
