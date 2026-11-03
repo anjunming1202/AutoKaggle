@@ -2,7 +2,7 @@
 
 An agent-led interview that turns a research idea into a draft competition. The agent asks focused questions, records the agreed scope, and prepares a challenge README, website draft, research ZIP, and private prediction-submission workflow.
 
-[Open the hosted BOLD preview](https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/) · [User guide](autokaggle/README.md) · [Challenge design guide](autokaggle/docs/README.md) · [API](autokaggle/docs/API.md)
+[Open the hosted BOLD preview](https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/) · [User guide](autokaggle/README.md) · [Challenge design guide](autokaggle/docs/README.md) · [API](autokaggle/docs/API.md) · [Session and data controls](autokaggle/docs/WORKSPACE.md)
 
 ## Start locally
 
@@ -26,11 +26,13 @@ Keep `.env` private. Model calls send interview content to the configured provid
 
 ## Current workflow
 
-1. Describe the research problem. The agent asks one focused follow-up at a time.
+1. Accept the data-storage notice. Describe the research problem, or use Sessions → Start from research to import a paper and public GitHub repository, edit the starting brief, and approve it. The agent asks one focused follow-up at a time.
 2. Inspect the checklist under Problem, Method & deployment, Baseline, and Setup.
 3. Open a checklist card to accept its scope, delegate a supported implementation choice, or record an exception. After two unsuccessful questions about one requirement, the agent offers a decision checkpoint.
 4. Upload a supported CSV through Data & checks. Review the target, metric, split, permissions, and data checks.
 5. Build and inspect the draft website, research ZIP, schemas, environment record, and development scoring results. Request changes to revise the challenge with its prior context.
+
+Use Sessions to resume or delete a session, share a single-use handoff code, review attempts, or change data-storage settings. Researcher turns have an Edit or remove answer action. Compute estimates accept hardware-time, tokens, dollars, or another concrete notation. See the [session guide](autokaggle/docs/WORKSPACE.md).
 
 The hosted service uses email codes and private account workspaces. New challenges use the signed-in address as the private organizer contact.
 
@@ -49,7 +51,7 @@ See the [implementation guide](autokaggle/README.md) and [future backend plan](a
 
 ```sh
 .venv/bin/python -m pytest autokaggle/tests -q
-node --test autokaggle/tests/test_chat_ui.cjs autokaggle/tests/test_login_ui.cjs autokaggle/tests/test_review_ui.cjs
+node --test autokaggle/tests/*.cjs
 .venv/bin/python -m autokaggle.scripts.live_scope_verify
 ```
 

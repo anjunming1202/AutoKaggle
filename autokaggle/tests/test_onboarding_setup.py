@@ -235,7 +235,7 @@ def test_readme_describes_required_artifacts_without_claiming_execution(project,
     setup.update(project, {"competition_type": kind, "daily_submission_limit": 3, "submissions_confirmed": True})
     c.make_readme(project, "draft")
     text = project["conversation"]["readme"]
-    for required in ("input/output contract", "file hashes", "metric version", "dependencies", "CPU, GPU, time, and RAM", "model-token budgets in dollars", "first complete submission-and-scoring trial", "before publication", phrase):
+    for required in ("input/output contract", "file hashes", "metric version", "dependencies", "CPU, GPU, time, and RAM", "model-token allowances in the organizer’s notation", "first complete submission-and-scoring trial", "before publication", phrase):
         assert required in text
     assert "Daily submission limit: 3 (confirmed)" in text
     assert "does not establish that these files exist or that an evaluator has run" in text

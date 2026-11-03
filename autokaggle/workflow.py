@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import tempfile
 import zipfile
@@ -106,7 +107,7 @@ def fingerprint(project):
     body = {"title": project["title"], "brief": project["brief"], "revision": project["revision"],
             "design": project["design"], "answers": project["answers"],
             "setup": onboarding_setup.get(project), "items": state["items"], "readiness": conversation.conversation_view(project)["readiness"],
-            "readme": state.get("readme"), "generator": generator_hash()}
+            "readme": state.get("readme"), "references": reference_receipts(project), "generator": generator_hash()}
     return hashlib.sha256(_json(body).encode()).hexdigest()
 
 
@@ -196,6 +197,20 @@ def _readiness_text(readiness):
     return "\n".join(lines)
 
 
+def money_text(project, field):
+    value = project["answers"].get(field) or ""
+    return onboarding_setup.redact_private(project, value) if re.search(r"\$|\bUSD\b|\bdollars?\b", value, re.I) else None
+
+
+def reference_receipts(project):
+    job = project.get("_source_import", {})
+    if not job.get("applied"):
+        return []
+    records = [{key: record[key] for key in ("kind", "url", "commit", "sha256", "license", "truncated") if key in record}
+               for record in job.get("records", [])]
+    return json.loads(onboarding_setup.redact_private(project, json.dumps(records)))
+
+
 def build(project, directory: Path):
     settings = onboarding_setup.get(project)
     state = conversation.ensure_conversation(project)
@@ -234,7 +249,10 @@ def build(project, directory: Path):
         "access": {"test_inputs": "visible" if settings["competition_type"] == "prediction" else "private", "test_answers": "private", "publication": "draft"},
         "execution": {"cluster": "AutoKaggle", "region": "lon1", "network": "disabled for submitted code", "test_labels_available_to_code": False,
                       "resources": {"cpu": 1, "memory_mib": 512, "seconds": 120, "gpu": 0}, "resource_status": "Initial runner defaults; organizer must review suitability."},
-        "budgets": {"compute_usd": onboarding_setup.redact_private(project, project["answers"].get("compute_budget") or "") or None, "tokens_usd": onboarding_setup.redact_private(project, project["answers"].get("token_budget") or "") or None,
+        "budgets": {"compute_usd": money_text(project, "compute_budget"), "tokens_usd": money_text(project, "token_budget"),
+                    "compute_estimate": onboarding_setup.redact_private(project, project["answers"].get("compute_budget") or "") or None,
+                    "token_estimate": onboarding_setup.redact_private(project, project["answers"].get("token_budget") or "") or None,
+                    "notation": "Organizer-supplied text; no currency conversion or price is inferred.",
                     "recorded_plan": onboarding_setup.redact_private(project, state["items"]["plan"]["value"])},
         "environment": runtime,
         "definition_readiness": readiness,
@@ -383,6 +401,18 @@ Follow the environment and resource limits in challenge.json and requirements.lo
         (public / "baseline.py").write_text(baseline_source(spec))
         (public / "submit.py").write_text(SUBMIT)
         (public / "evaluate.py").write_text(EVALUATE)
+        references = reference_receipts(project)
+        if references:
+            (public / "references.json").write_text(_json({"sources": references,
+                "policy": "Reference material only. No source code was executed or paper result reproduced during import."}))
+            lines = ["# Start from existing research", "",
+                "The organizer approved references for this task. Read references.json for the exact paper hash and repository commit.",
+                "Prepare reference code and its pinned dependencies before entering an offline runner. Review its license.",
+                "Use reference code only within the challenge method and data-access rules. A repository license does not establish dataset permission.",
+                "Repository code and dependencies are not bundled or executed by this import. The standard pipeline baseline is a separate check.",
+                "Source-reported scores remain distinct from your measured results.", ""]
+            lines += [r["kind"] + ": " + r["url"] + (" at commit " + r["commit"] if r.get("commit") else "") for r in references]
+            (public / "WARMSTART.md").write_text("\n".join(lines) + "\n")
         (private / "challenge.json").write_text(_json(spec))
         (private / "evaluate.py").write_text(EVALUATE)
         (private / "first_results.json").write_text(_json({"pipeline_test": baseline, "baseline": baseline, "checks": checks, "definition_readiness": readiness, "scope_decisions": scopes}))

@@ -209,7 +209,7 @@ test("All error states block Send and Skip but allow editing and drafting", () =
     const { $ } = dom();
     $("message-input").value = "A new correction";
     const state = { projectId: "p1", pending: null, conversation: { status: "error", can_retry, current_question: { text: "What is the target?" }, messages: [{ role: "user", content: "My problem" }] } };
-    const update = uiFunction("updateControls", { state, $, working: () => false, userCount: () => 1, contactRequired: () => false, reviewAvailable: () => true, renderContact: noop, renderReviewControls: noop, renderError: noop, updateSetupControls: noop, updateBypassControls: noop, updateWorkflowControls: noop, updateDataControls: noop });
+    const update = uiFunction("updateControls", { state, $, document: {querySelectorAll: () => []}, window: {}, working: () => false, userCount: () => 1, contactRequired: () => false, reviewAvailable: () => true, renderContact: noop, renderReviewControls: noop, renderError: noop, updateSetupControls: noop, updateBypassControls: noop, updateWorkflowControls: noop, updateDataControls: noop });
     update();
     assert.equal($("send-message").disabled, true);
     assert.equal($("skip-question").disabled, true);
@@ -218,6 +218,18 @@ test("All error states block Send and Skip but allow editing and drafting", () =
   }
 });
 
+
+test("Answer controls and session tools leave busy state after a completed response", () => {
+  const { $ } = dom(); const answer = {disabled: true}; const events = []; let busy = true;
+  const state = {projectId: "p1", pending: null, config: {can_create_projects: true}, conversation: {status: "idle", messages: [{role: "user", content: "My problem"}]}};
+  const update = uiFunction("updateControls", {state, $, document: {querySelectorAll: () => [answer]},
+    window: {dispatchEvent: (event) => events.push(event)}, CustomEvent: class {constructor(type, options) {this.type = type; this.detail = options.detail;}},
+    working: () => busy, userCount: () => 1, contactRequired: () => false, reviewAvailable: () => true,
+    renderContact: noop, renderReviewControls: noop, renderError: noop, updateBypassControls: noop, updateWorkflowControls: noop, updateDataControls: noop});
+  update(); assert.equal(answer.disabled, true); assert.equal(events.at(-1).detail.busy, true);
+  busy = false; update(); assert.equal(answer.disabled, false); assert.equal(events.at(-1).detail.busy, false);
+  assert.equal(events.at(-1).type, "autokaggle:state");
+});
 
 test("An explicit project link takes priority over the stored conversation", async () => {
   const opened = [];

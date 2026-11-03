@@ -111,6 +111,7 @@ def resources(source, digest, private, node_ips, mail=None, mail_enabled=False):
     settings = {"AUTOKAGGLE_PRIVATE_MODE": "1", "AUTOKAGGLE_PUBLIC_BASE_URL": "https://" + HOST,
                 "AUTOKAGGLE_ALLOWED_HOSTS": HOST, "AUTOKAGGLE_DATA_DIR": "/data/projects",
                 "OPENAI_BASE_URL": "https://openrouter.ai/api/v1", "AUTOKAGGLE_MODEL": "openai/gpt-6.1-sol",
+                "AUTOKAGGLE_REQUIRE_STORAGE_CONSENT": "1",
                 "AUTOKAGGLE_MODE": "model", "PYTHONPATH": "/runtime:/app", "PYTHONDONTWRITEBYTECODE": "1",
                 "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "HOME": "/tmp"}
     context = {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True, "capabilities": {"drop": ["ALL"]}}

@@ -97,6 +97,8 @@ def _submit(store, project, request_id, payload, team, kind, runner=None):
             raise RunnerUnavailable("Code submissions are unavailable until the Civo sandbox passes its execution checks.")
         day = datetime.now(timezone.utc).date().isoformat()
         count = con.execute("SELECT COUNT(*) FROM draft_submissions WHERE project=? AND day=? AND team=?", (project["id"], day, team)).fetchone()[0]
+        usage = con.execute("SELECT count FROM submission_usage WHERE project=? AND day=? AND team=?", (project["id"], day, team)).fetchone()
+        count += usage[0] if usage else 0
         limit = onboarding_setup.get(project)["daily_submission_limit"]
         if count >= limit:
             raise LimitReached("The daily submission allowance has been used. It resets at 00:00 UTC.")
