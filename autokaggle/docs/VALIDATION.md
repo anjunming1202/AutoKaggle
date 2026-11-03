@@ -1,5 +1,13 @@
 # Validation
 
+## PR #12 and PR #9 merge checks — 3 November 2026
+
+The combined changes passed 1,133 Python tests, 157 Node client tests, and the new English source check. Three expected warnings came from invalid prediction classes and numeric overflow.
+
+Merge review found that PR #9 could reopen a confirmed scope after an appended unknown or compatible detail. Requirement reassessment now needs a validated correction that replaces source evidence for that specific decision. Seven new cases cover compatible additions, questions, unknown answers, and preservation of unrelated confirmed decisions. The existing correction fixture now supplies the exact replacement operation required by the prompt.
+
+Live OpenRouter checks used `openai/gpt-6.1-sol` with medium reasoning. Five real model calls passed. The recovery script checked the reported kernel correction, preserved independent parameters, sign-out and sign-in, interrupted-answer retry, and required setting controls. Three further calls checked a correction without the former keywords, a question that leaves the prior choice intact, and an added detail that preserves confirmed scope. Email used a captured local transport. No hosted scientific session was changed and no production deployment was tested. Reports stay in the ignored test-results directory.
+
 ## PR #3 merge checks — 3 November 2026
 
 The PR #3 integration with current main passed 1,125 Python tests and 157 Node client tests. Three expected warnings came from invalid prediction classes and numeric overflow. The tests cover setting choices at checkpoints, rejection of unrelated setting choices, retry identity, storage acceptance, answer reassessment, and expired sign-in with the session dialogs.

@@ -135,6 +135,44 @@ def test_append_does_not_stale_confirmed_scope(project):
     assert project["conversation"]["items"]["question"]["scope"] == before
 
 
+@pytest.mark.parametrize("status", ["missing", "deferred"])
+@pytest.mark.parametrize("text", ["I do not know another useful comparison.",
+    "This is also useful for planning a later study.", "How is this score calculated?"])
+def test_append_assessment_cannot_reopen_confirmed_scope(project, text, status):
+    state = project["conversation"]
+    save(project, entries=[resolution("success")])
+    before = copy.deepcopy(state["items"]["question"]["scope"])
+    parsed = {"updates": [append("question", text)], "requirements": [
+        {"field": "question", "id": "success", "status": status, "evidence": [text],
+             "reason": "The researcher has not supplied another comparison."}], "question_field": "", "question_text": ""}
+    updates = c._validate_scope(parsed, text, state)
+    records = c._validate_requirements(parsed, text, state, updates)
+    assert not records[0]["explicit_correction"]
+    c._apply(state, updates, "compatible-context")
+    c._apply_requirements(state, records)
+    assert state["items"]["question"]["scope"] == before
+    assert readiness.scope_resolution("question", state["items"]["question"], "success")
+
+
+def test_correction_assessment_does_not_reopen_an_unrelated_confirmed_decision(project):
+    state = project["conversation"]
+    item = state["items"]["question"]
+    success = "Useful success means balanced accuracy of at least 0.85."
+    value = "This reduces simulated laboratory costs."
+    save(project, entries=[resolution("success", detail=success), resolution("value", detail=value)])
+    text = "Let's go with balanced accuracy of at least 0.90."
+    parsed = {"updates": [{**append("question", text), "operation": "correct", "supersedes": [success]}],
+        "requirements": [{"field": "question", "id": "value", "status": "missing", "evidence": [text],
+                          "reason": "The new threshold does not restate the practical value."}], "question_field": "", "question_text": ""}
+    updates = c._validate_scope(parsed, text, state)
+    records = c._validate_requirements(parsed, text, state, updates)
+    assert not records[0]["explicit_correction"]
+    c._apply(state, updates, "correct-success-only")
+    c._apply_requirements(state, records)
+    assert readiness.scope_resolution("question", item, "success") is None
+    assert readiness.scope_resolution("question", item, "value")["detail"] == value
+
+
 def test_evidenced_conflict_reopens_only_related_decision(project):
     state = project["conversation"]
     item = state["items"]["methodology"]
@@ -268,7 +306,7 @@ def test_redundant_delegation_assessment_does_not_discard_explicit_correction(pr
     delegated = "Choose a simple implementation within the fixed platform rules."
     save(project, "methodology", [resolution("methods", "delegated", delegated), resolution("resources", detail=allowed)])
     new = "Correction to the agreed resource policy: external datasets are now allowed, but external services remain prohibited."
-    parsed = {"updates": [append("methodology", new)], "requirements": [
+    parsed = {"updates": [{**append("methodology", new), "operation": "correct", "supersedes": [allowed]}], "requirements": [
         {"field": "methodology", "id": "methods", "status": "recorded", "evidence": [delegated], "reason": ""},
         {"field": "methodology", "id": "resources", "status": "missing", "evidence": [new], "reason": "The accepted resource policy changed."}],
         "question_field": "", "question_text": ""}

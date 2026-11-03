@@ -842,9 +842,15 @@ def _validate_requirements(parsed, current, state, updates):
         if status in {"missing", "deferred"} and not record["reason"].strip():
             raise ModelResponseError("Open requirements need a specific gap")
         previous = state["items"][field].get("requirements", {}).get(identifier, {})
+        decision_sources = _source_quotes(previous) + ([accepted["detail"]] if accepted else [])
+        # An added detail or unknown must not reopen an accepted decision.
+        # Require a validated replacement of evidence for this requirement.
         explicit_correction = bool(accepted and accepted["mode"] == "confirmed" and status in {"missing", "deferred"}
             and any(quote in current for quote in evidence)
-            and any(update["field"] == field and any(quote in update["evidence"] for quote in evidence) for update in updates))
+            and any(update["field"] == field and update["operation"] == "correct"
+                    and any(quote in update["evidence"] for quote in evidence)
+                    and any(span in source or source in span for span in update["supersedes"] for source in decision_sources)
+                    for update in updates))
         if status == "conflicting":
             prior = _source_quotes(previous)
             resolved = readiness.scope_resolution(field, state["items"][field], identifier)
