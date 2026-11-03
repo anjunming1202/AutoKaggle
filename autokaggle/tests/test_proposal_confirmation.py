@@ -27,22 +27,23 @@ def ask(project, field, identifier, text, proposal):
     return state
 
 
-COMPETITION_QUESTION = "是否选择预测提交（参赛者拿到测试输入并提交预测文件）？"
-COMPETITION_PROPOSAL = {"text": "预测提交", "basis": "The researcher said the final deliverable is a prediction table.", "competition_type": "prediction"}
+COMPETITION_QUESTION = ("Since the final deliverable is a prediction table, should this be a prediction-submission competition, "
+                        "where participants receive test inputs and upload predictions?")
+COMPETITION_PROPOSAL = {"text": "a prediction-submission competition", "basis": "The researcher said the final deliverable is a prediction table.", "competition_type": "prediction"}
 METRIC_TEXT = "mean absolute error over all held-out sites, lower is better"
 METRIC_PROPOSAL = {"text": METRIC_TEXT, "basis": "The researcher named mean absolute error earlier."}
 
 
-def test_setting_proposal_accepted_in_any_language_records_the_setting(monkeypatch):
+def test_setting_proposal_accepted_in_natural_words_records_the_setting(monkeypatch):
     project = fresh_project()
     state = ask(project, "competition", "choice", COMPETITION_QUESTION, COMPETITION_PROPOSAL)
     assert state["current_question"]["proposal"]["competition_type"] == "prediction"
-    calls = provider(monkeypatch, [reply("accepted", ["是的"])])
-    c.submit_message(project, "是的", "accept-competition")
+    calls = provider(monkeypatch, [reply("accepted", ["Yes, that works."])])
+    c.submit_message(project, "Yes, that works.", "accept-competition")
     assert len(calls) == 1 and project["conversation"]["status"] == "idle"
     assert onboarding_setup.get(project)["competition_type"] == "prediction"
     evidence = project["conversation"]["items"]["competition"]["evidence"][-1]
-    assert evidence["source"] == "chat" and evidence["quotes"] == ["是的", "预测提交"]
+    assert evidence["source"] == "chat" and evidence["quotes"] == ["Yes, that works.", "a prediction-submission competition"]
 
 
 def test_server_proposed_allowance_is_confirmed_by_agreement(monkeypatch):
@@ -50,14 +51,14 @@ def test_server_proposed_allowance_is_confirmed_by_agreement(monkeypatch):
     state = c.ensure_conversation(project)
     c._ask(state, "submissions", criterion("submissions", "allowance"), "Do you confirm 5 submissions per day, or want a different daily limit?", "",
            {"text": "5 submissions per day", "basis": "The current daily allowance setting.", "daily_submission_limit": 5})
-    provider(monkeypatch, [reply("accepted", ["同意"])])
-    c.submit_message(project, "同意", "accept-allowance")
+    provider(monkeypatch, [reply("accepted", ["That's fine by us."])])
+    c.submit_message(project, "That's fine by us.", "accept-allowance")
     assert onboarding_setup.get(project)["submissions_confirmed"] is True
     assert onboarding_setup.get(project)["daily_submission_limit"] == 5
 
 
 def test_rejected_or_unaddressed_proposal_changes_nothing(monkeypatch):
-    for decision, text in (("rejected", "不，选代码提交之后再说"), ("none", "我想先说一下数据来源")):
+    for decision, text in (("rejected", "Not yet, we may switch to code later."), ("none", "First let me explain where the data come from.")):
         project = fresh_project()
         ask(project, "competition", "choice", COMPETITION_QUESTION, COMPETITION_PROPOSAL)
         provider(monkeypatch, [reply(decision)])
@@ -68,14 +69,14 @@ def test_rejected_or_unaddressed_proposal_changes_nothing(monkeypatch):
 def test_setting_stated_in_own_words_is_recorded_with_or_without_a_proposal(monkeypatch):
     project = fresh_project()
     ask(project, "competition", "choice", COMPETITION_QUESTION, COMPETITION_PROPOSAL)
-    provider(monkeypatch, [reply("rejected", choice={"competition_type": "code", "evidence": ["我们要提交代码"]})])
-    c.submit_message(project, "不对，我们要提交代码", "state-competition")
+    provider(monkeypatch, [reply("rejected", choice={"competition_type": "code", "evidence": ["participants should submit code instead"]})])
+    c.submit_message(project, "No, participants should submit code instead.", "state-competition")
     assert onboarding_setup.get(project)["competition_type"] == "code"
     project = fresh_project()
     state = c.ensure_conversation(project)
     c._ask(state, "submissions", criterion("submissions", "allowance"), "How many submissions per team per day should be allowed?", "")
-    provider(monkeypatch, [reply(choice={"daily_submission_limit": 3, "evidence": ["每天三次就够了"]})])
-    c.submit_message(project, "每天三次就够了", "state-allowance")
+    provider(monkeypatch, [reply(choice={"daily_submission_limit": 3, "evidence": ["Three a day is plenty."]})])
+    c.submit_message(project, "Three a day is plenty.", "state-allowance")
     assert onboarding_setup.get(project)["daily_submission_limit"] == 3
     assert onboarding_setup.get(project)["submissions_confirmed"] is True
 
@@ -86,15 +87,15 @@ def test_setting_choice_must_answer_the_active_setting_question():
         c._setting_choice(reply(choice={"competition_type": "code", "evidence": ["code"]}), "code", state)
     state = ask(fresh_project(), "competition", "choice", COMPETITION_QUESTION, COMPETITION_PROPOSAL)
     with pytest.raises(ValueError, match="own words"):
-        c._setting_choice(reply(choice={"competition_type": "code"}), "代码", state)
+        c._setting_choice(reply(choice={"competition_type": "code"}), "code please", state)
     with pytest.raises(ValueError, match="both accept"):
-        c._validated_scope(reply("accepted", ["是的"], choice={"competition_type": "code", "evidence": ["是的"]}), "是的", state)
+        c._validated_scope(reply("accepted", ["Yes, that works."], choice={"competition_type": "code", "evidence": ["Yes, that works."]}), "Yes, that works.", state)
 
 
 @pytest.mark.parametrize("field,identifier,text,choice,expected", [
     ("competition", "choice", "A prediction file is fine.", {"competition_type": "prediction"}, "prediction"),
-    ("competition", "choice", "我们要提交代码", {"competition_type": "code"}, "code"),
-    ("submissions", "allowance", "每天三次就够了", {"daily_submission_limit": 3}, 3),
+    ("competition", "choice", "Participants should submit code.", {"competition_type": "code"}, "code"),
+    ("submissions", "allowance", "Three a day is plenty.", {"daily_submission_limit": 3}, 3),
 ])
 def test_natural_choice_at_setting_checkpoint_is_saved(monkeypatch, field, identifier, text, choice, expected):
     project = fresh_project()
@@ -129,12 +130,12 @@ def test_scientific_proposal_records_the_shown_value_with_the_confirmation(monke
     question = f"Should the score be {METRIC_TEXT}?"
     state = ask(project, "task", "metric", question, METRIC_PROPOSAL)
     question_id = state["messages"][-1]["id"]
-    provider(monkeypatch, [reply("accepted", ["没错"], [requirement("task", "metric", METRIC_TEXT)])])
-    c.submit_message(project, "没错", "accept-metric")
+    provider(monkeypatch, [reply("accepted", ["Exactly right."], [requirement("task", "metric", METRIC_TEXT)])])
+    c.submit_message(project, "Exactly right.", "accept-metric")
     item = project["conversation"]["items"]["task"]
-    assert METRIC_TEXT in item["value"] and "没错" not in item["value"]
+    assert METRIC_TEXT in item["value"] and "Exactly right." not in item["value"]
     confirmation = item["evidence"][-1]["confirmed_proposal"]
-    assert confirmation["quotes"] == ["没错"] and confirmation["question_message_id"] == question_id
+    assert confirmation["quotes"] == ["Exactly right."] and confirmation["question_message_id"] == question_id
     assert item["requirements"]["metric"]["status"] == "recorded"
 
 
@@ -153,12 +154,12 @@ def test_acceptance_needs_a_pending_proposal_and_the_researchers_words():
 @pytest.mark.parametrize("field,proposal", [
     ("task", {"text": "a value that the question never shows", "basis": "earlier statement", "competition_type": "", "daily_submission_limit": 0}),
     ("task", {"text": METRIC_TEXT, "basis": "", "competition_type": "", "daily_submission_limit": 0}),
-    ("competition", {"text": "预测提交", "basis": "earlier statement", "competition_type": "", "daily_submission_limit": 0}),
+    ("competition", {"text": "a prediction-submission competition", "basis": "earlier statement", "competition_type": "", "daily_submission_limit": 0}),
     ("organizer", {"text": "a@example.org", "basis": "earlier statement", "competition_type": "", "daily_submission_limit": 0}),
 ])
 def test_proposals_that_are_not_shown_or_lack_a_basis_are_dropped(field, proposal):
     state = c.ensure_conversation(fresh_project())
-    parsed = {"question_field": field, "question_text": f"Should the score be {METRIC_TEXT}? 预测提交 a@example.org", "question_proposal": proposal}
+    parsed = {"question_field": field, "question_text": f"Should the score be {METRIC_TEXT}? a prediction-submission competition a@example.org", "question_proposal": proposal}
     assert c._question_proposal(parsed, state) is None
 
 
