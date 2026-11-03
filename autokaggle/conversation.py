@@ -162,6 +162,7 @@ def _data_link_question(state, text, requirement_id=None):
 
 def _message(state, role, content):
     state["messages"].append({"role": role, "content": content, "id": str(uuid.uuid4())})
+    return state["messages"][-1]["id"]
 
 
 def ensure_conversation(project):
@@ -600,8 +601,23 @@ def _scope_schema():
             "evidence": {"type": "array", "maxItems": 8, "items": quote}, "reason": {"type": "string", "maxLength": 1000}},
             "required": ["field", "id", "status", "evidence", "reason"]}},
         "question_field": {"type": "string", "enum": ["", *BY_ID]}, "question_text": {"type": "string", "maxLength": 500},
-        "question_requirement_id": {"type": "string", "enum": ["", *sorted({c["id"] for criteria in readiness.REQUIREMENTS.values() for c in criteria})]}, "question_why": {"type": "string", "maxLength": 1000}},
-        "required": ["updates", "requirements", "question_field", "question_text", "question_requirement_id", "question_why"]}
+        "question_requirement_id": {"type": "string", "enum": ["", *sorted({c["id"] for criteria in readiness.REQUIREMENTS.values() for c in criteria})]}, "question_why": {"type": "string", "maxLength": 1000},
+        "question_proposal": {"type": "object", "additionalProperties": False, "properties": {
+            "text": {"type": "string", "maxLength": 500}, "basis": {"type": "string", "maxLength": 500},
+            "competition_type": {"type": "string", "enum": ["", "prediction", "code"]},
+            "daily_submission_limit": {"type": "integer", "minimum": 0, "maximum": 1000}},
+            "required": ["text", "basis", "competition_type", "daily_submission_limit"]},
+        "proposal_response": {"type": "object", "additionalProperties": False, "properties": {
+            "decision": {"type": "string", "enum": ["none", "accepted", "rejected"]},
+            "evidence": {"type": "array", "maxItems": 4, "items": quote}},
+            "required": ["decision", "evidence"]},
+        "setting_choice": {"type": "object", "additionalProperties": False, "properties": {
+            "competition_type": {"type": "string", "enum": ["", "prediction", "code"]},
+            "daily_submission_limit": {"type": "integer", "minimum": 0, "maximum": 1000},
+            "evidence": {"type": "array", "maxItems": 4, "items": quote}},
+            "required": ["competition_type", "daily_submission_limit", "evidence"]}},
+        "required": ["updates", "requirements", "question_field", "question_text", "question_requirement_id", "question_why",
+                     "question_proposal", "proposal_response", "setting_choice"]}
 
 
 def _draft_schema():
@@ -720,7 +736,7 @@ def _explicit_correction(text):
 def _validate_scope(parsed, current, state):
     # Older saved/test provider responses can be read, but cannot establish
     # requirement completion. The live provider schema requires assessments.
-    if not isinstance(parsed, dict) or not {"updates", "question_field", "question_text"} <= set(parsed) or set(parsed) - {"updates", "requirements", "question_field", "question_text", "question_requirement_id", "question_why"}:
+    if not isinstance(parsed, dict) or not {"updates", "question_field", "question_text"} <= set(parsed) or set(parsed) - {"updates", "requirements", "question_field", "question_text", "question_requirement_id", "question_why", "question_proposal", "proposal_response", "setting_choice"}:
         raise ModelResponseError("Invalid conversation response")
     if not isinstance(parsed["updates"], list) or len(parsed["updates"]) > len(ITEMS):
         raise ModelResponseError("Invalid updates")
@@ -880,10 +896,102 @@ def _repair_question(parsed, state, updates, requirements):
     return repaired
 
 
+# Settings whose proposal carries a structured value for the setup validator.
+SETTING_PROPOSALS = {"competition": "competition_type", "submissions": "daily_submission_limit"}
+
+
+def _question_proposal(parsed, state):
+    """Keep the one concrete value that the question itself shows the researcher.
+
+    The value must appear verbatim in question_text and name its basis, so an
+    acceptance confirms what the researcher read. A setting proposal also carries
+    its structured value; the setup validator checks it when it is accepted.
+    """
+    proposal, field, text = parsed.get("question_proposal"), parsed.get("question_field"), parsed.get("question_text")
+    if not isinstance(proposal, dict) or not isinstance(proposal.get("text"), str) or not proposal["text"].strip():
+        return None
+    value, basis, setting = proposal["text"].strip(), proposal.get("basis"), SETTING_PROPOSALS.get(field)
+    structured = proposal.get(setting) if setting else None
+    if (not isinstance(text, str) or value not in text or not isinstance(basis, str) or not basis.strip()
+            or field not in BY_ID or field in AGENT_OWNED_FIELDS or field == "organizer"
+            or (setting and structured in (None, "", 0))):
+        _record_response_issue(state, "scope", "question_proposal_dropped", 0)
+        return None
+    return {"text": value, "basis": basis.strip(), **({setting: structured} if setting else {})}
+
+
+def _accepted_proposal(parsed, current, state):
+    """Return the pending proposal that the current message accepts, if any."""
+    response = parsed.get("proposal_response")
+    if response is None:
+        return None
+    if (not isinstance(response, dict) or set(response) != {"decision", "evidence"}
+            or response["decision"] not in {"none", "accepted", "rejected"}
+            or not isinstance(response["evidence"], list) or len(response["evidence"]) > 4):
+        raise ModelResponseError("Invalid proposal response")
+    if response["decision"] != "accepted":
+        return None
+    active = state.get("current_question") or {}
+    if not active.get("proposal"):
+        raise ModelResponseError("No proposal is awaiting confirmation")
+    if not response["evidence"]:
+        raise ModelResponseError("An accepted proposal needs the researcher's own words")
+    return {"field": active["field"], "proposal": active["proposal"],
+            "evidence": [_evidence(quote, current) for quote in response["evidence"]]}
+
+
+def _setting_choice(parsed, current, state):
+    """Return the setting a researcher states in reply to the active setting question."""
+    choice = parsed.get("setting_choice")
+    if choice is None:
+        return None
+    if (not isinstance(choice, dict) or set(choice) != {"competition_type", "daily_submission_limit", "evidence"}
+            or not isinstance(choice["evidence"], list) or len(choice["evidence"]) > 4):
+        raise ModelResponseError("Invalid setting choice")
+    values = {key: choice[key] for key in ("competition_type", "daily_submission_limit") if choice[key] not in ("", 0)}
+    if not values:
+        return None
+    field = (state.get("current_question") or {}).get("field")
+    if set(values) != {SETTING_PROPOSALS.get(field)}:
+        raise ModelResponseError("A setting choice must answer the active setting question")
+    if not choice["evidence"]:
+        raise ModelResponseError("A setting choice needs the researcher's own words")
+    return {"field": field, "value": next(iter(values.values())),
+            "evidence": [_evidence(quote, current) for quote in choice["evidence"]]}
+
+
+def _record_setting(project, field, value, quotes, message_id):
+    # The setup validator checks the value; chat evidence keeps the researcher's words.
+    change = {SETTING_PROPOSALS[field]: value, **({"submissions_confirmed": True} if field == "submissions" else {})}
+    onboarding_setup.update(project, change, source="chat", message_id=message_id, evidence={field: quotes})
+    revision = _revision(ensure_conversation(project))
+    if revision and field not in revision["changed_fields"]:
+        revision["changed_fields"].append(field)
+
+
+def _proposal_update(state, accepted):
+    # The researcher confirmed the proposal as shown, so its text becomes the
+    # recorded value. The confirming words and the question stay as evidence.
+    item = state["items"][accepted["field"]]
+    answered = item["status"] == "answered"
+    return {"field": accepted["field"], "status": "answered" if answered else "partial", "operation": "append",
+            "evidence": [accepted["proposal"]["text"]], "supersedes": [],
+            "remaining_gap": "" if answered else item.get("gap") or BY_ID[accepted["field"]][4],
+            "confirmation": {"question_message_id": accepted["proposal"]["message_id"],
+                             "basis": accepted["proposal"]["basis"], "quotes": accepted["evidence"]}}
+
+
 def _validated_scope(parsed, text, state):
     updates = _validate_scope(parsed, text, state)
+    accepted, choice = _accepted_proposal(parsed, text, state), _setting_choice(parsed, text, state)
+    if accepted and choice:
+        raise ModelResponseError("A reply cannot both accept the proposal and state another setting")
+    if accepted and accepted["field"] not in SETTING_PROPOSALS:
+        updates = [*updates, _proposal_update(state, accepted)]
     requirements = _validate_requirements(parsed, text, state, updates)
-    return _repair_question(parsed, state, updates, requirements), updates, requirements
+    parsed = _repair_question(parsed, state, updates, requirements)
+    return ({**parsed, "_accepted_proposal": accepted, "_setting_choice": choice,
+             "_question_proposal": _question_proposal(parsed, state)}, updates, requirements)
 
 
 def _apply_requirements(state, records):
@@ -1039,7 +1147,8 @@ def _apply(state, updates, message_id):
         else:
             existing = item["value"].split("\n") if item["value"] else []
             item["value"] = "\n".join(dict.fromkeys([*existing, *quotes]))
-        item["evidence"].append({"message_id": message_id, "quotes": quotes})
+        confirmation = {"confirmed_proposal": copy.deepcopy(update["confirmation"])} if "confirmation" in update else {}
+        item["evidence"].append({"message_id": message_id, "quotes": quotes, **confirmation})
         item["_source_version"] = item.get("_source_version", 0) + 1
         item["status"] = update["status"]
         item["gap"] = update["remaining_gap"] if update["status"] != "answered" else ""
@@ -1048,7 +1157,7 @@ def _apply(state, updates, message_id):
             item["gap"] = "Researcher statement recorded. Application execution evidence is still required."
         if item["status"] != "answered" and not item["gap"]:
             item["gap"] = "Deferred by the researcher." if item["status"] == "deferred" else BY_ID[key][4]
-        state["_history"].append({"field": key, "before": previous, "message_id": message_id, "operation": update["operation"], "supersedes": copy.deepcopy(update.get("supersedes", [])), "replacement_evidence": copy.deepcopy(quotes)})
+        state["_history"].append({"field": key, "before": previous, "message_id": message_id, "operation": update["operation"], "supersedes": copy.deepcopy(update.get("supersedes", [])), "replacement_evidence": copy.deepcopy(quotes), **confirmation})
         revision = _revision(state)
         if revision and key not in revision["changed_fields"]:
             revision["changed_fields"].append(key)
@@ -1156,7 +1265,7 @@ def _needs_checkpoint(state):
     return False
 
 
-def _ask(state, field, criterion, text, why=""):
+def _ask(state, field, criterion, text, why="", proposal=None):
     token = field + "." + criterion["id"]
     count = state["_criterion_asks"].get(token, 0)
     if count >= 2:
@@ -1184,7 +1293,10 @@ def _ask(state, field, criterion, text, why=""):
         state["_asked"].append(field)
         state["followups"] += 1
     _reset_error(state)
-    _message(state, "assistant", text)
+    question_id = _message(state, "assistant", text)
+    # A rewritten question no longer shows the proposed value, so it proposes nothing.
+    if proposal and proposal["text"] in text:
+        state["current_question"]["proposal"] = {**proposal, "message_id": question_id}
 
 
 def _advance(project, reserve, suggestion=None, force_draft=False):
@@ -1215,11 +1327,15 @@ def _advance(project, reserve, suggestion=None, force_draft=False):
         if state["items"][key]["status"] == "partial" and state["items"][key]["gap"]:
             fallback = _partial_question(key, state["items"][key]["gap"], fallback)
         text = suggestion["question_text"].strip() if suggestion and suggestion.get("question_field") == key else fallback
+    proposal = suggestion.get("_question_proposal") if suggestion and suggestion.get("question_field") == key else None
     if key in readiness.SERVER_FIELDS:
-        text = BY_ID[key][3]
+        text, proposal = BY_ID[key][3], None
         if key == "submissions":
-            text = f"Do you confirm {onboarding_setup.get(project)['daily_submission_limit']} submissions per day, or want a different daily limit?"
-    _ask(state, key, criterion, text, suggestion.get("question_why", "") if accurate_target else "")
+            limit = onboarding_setup.get(project)["daily_submission_limit"]
+            text = f"Do you confirm {limit} submissions per day, or want a different daily limit?"
+            proposal = {"text": f"{limit} submissions per day", "basis": "The current daily allowance setting.",
+                        "daily_submission_limit": limit}
+    _ask(state, key, criterion, text, suggestion.get("question_why", "") if accurate_target else "", proposal)
 
 
 def _advance_revision(project, reserve, suggestion=None, force_draft=False):
@@ -1239,7 +1355,7 @@ def _advance_revision(project, reserve, suggestion=None, force_draft=False):
         return
     if state.get("_requirements_assessed") and suggestion.get("question_requirement_id") != criterion["id"]:
         text = f"Please define {criterion['label'].lower()} for this challenge. {criterion['description']}"
-    _ask(state, field, criterion, text, suggestion.get("question_why", ""))
+    _ask(state, field, criterion, text, suggestion.get("question_why", ""), suggestion.get("_question_proposal"))
 
 
 def _quote(text):
@@ -1502,6 +1618,12 @@ def _process_message(project, reserve):
         parsed, updates, requirements = _validated_response(project, "scope", context, reserve,
                                                             lambda response: _validated_scope(response, text, state))
         _apply(state, updates, message_id)
+        accepted, choice = parsed.get("_accepted_proposal"), parsed.get("_setting_choice")
+        if accepted and accepted["field"] in SETTING_PROPOSALS:
+            _record_setting(project, accepted["field"], accepted["proposal"][SETTING_PROPOSALS[accepted["field"]]],
+                            [*accepted["evidence"], accepted["proposal"]["text"]], message_id)
+        if choice:
+            _record_setting(project, choice["field"], choice["value"], choice["evidence"], message_id)
         if "requirements" in parsed:
             _apply_requirements(state, requirements)
         state["_unprocessed"] = [m for m in state.get("_unprocessed", []) if m["message_id"] not in reviewed_ids]
