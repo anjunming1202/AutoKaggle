@@ -50,7 +50,7 @@ def main():
                     client.post("/api/access/email/verify", json={"challenge_id": response.json()["challenge_id"], "code": deliveries[-1]}, headers=headers()).raise_for_status()
                 login()
                 identity = app.state.access.email_auth.identity(client.cookies[email_auth.USER_COOKIE])
-                identifier = client.post("/api/projects", json={"title": "Fourier checkpoint recovery"}).json()["id"]
+                identifier = client.post("/api/projects", json={"title": "Fourier checkpoint recovery", "storage_accepted": True}).json()["id"]
                 root = "/api/projects/" + identifier
                 item = app.state.store.get(identifier, identity["owner"])
                 item["conversation"] = kernel_project()["conversation"]

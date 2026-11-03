@@ -204,11 +204,11 @@ def test_legacy_question_migration_retains_prior_count(project):
     assert state["scope_checkpoint"]["requirement_id"] == "success"
 
 
-def test_nonnumeric_budget_does_not_reset_clarification_count(project):
+def test_unknown_budget_does_not_reset_clarification_count(project):
     state = project["conversation"]
     state["items"]["plan"]["requirements"].pop("compute_budget")
     state["_criterion_asks"]["plan.compute_budget"] = 2
-    c._apply_requirements(state, [{"field": "plan", "id": "compute_budget", "status": "recorded", "value": "A small compute budget.", "evidence": ["A small compute budget."], "reason": ""}])
+    c._apply_requirements(state, [{"field": "plan", "id": "compute_budget", "status": "recorded", "value": "Unknown", "evidence": ["Unknown"], "reason": ""}])
     assert state["_criterion_asks"]["plan.compute_budget"] == 2
 
 

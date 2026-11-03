@@ -209,7 +209,7 @@ test("All error states block Send and Skip but allow editing and drafting", () =
     const { $ } = dom();
     $("message-input").value = "A new correction";
     const state = { projectId: "p1", pending: null, conversation: { status: "error", can_retry, current_question: { text: "What is the target?" }, messages: [{ role: "user", content: "My problem" }] } };
-    const update = uiFunction("updateControls", { state, $, document: { querySelectorAll: () => [] }, working: () => false, userCount: () => 1, contactRequired: () => false, reviewAvailable: () => true, renderContact: noop, renderReviewControls: noop, renderError: noop, updateSetupControls: noop, updateBypassControls: noop, updateWorkflowControls: noop, updateDataControls: noop });
+    const update = uiFunction("updateControls", { state, $, document: {querySelectorAll: () => []}, window: {}, working: () => false, userCount: () => 1, contactRequired: () => false, reviewAvailable: () => true, renderContact: noop, renderReviewControls: noop, renderError: noop, updateSetupControls: noop, updateBypassControls: noop, updateWorkflowControls: noop, updateDataControls: noop });
     update();
     assert.equal($("send-message").disabled, true);
     assert.equal($("skip-question").disabled, true);
@@ -218,6 +218,18 @@ test("All error states block Send and Skip but allow editing and drafting", () =
   }
 });
 
+
+test("Answer controls and session tools leave busy state after a completed response", () => {
+  const { $ } = dom(); const answer = {disabled: true}; const events = []; let busy = true;
+  const state = {projectId: "p1", pending: null, config: {can_create_projects: true}, conversation: {status: "idle", messages: [{role: "user", content: "My problem"}]}};
+  const update = uiFunction("updateControls", {state, $, document: {querySelectorAll: () => [answer]},
+    window: {dispatchEvent: (event) => events.push(event)}, CustomEvent: class {constructor(type, options) {this.type = type; this.detail = options.detail;}},
+    working: () => busy, userCount: () => 1, contactRequired: () => false, reviewAvailable: () => true,
+    renderContact: noop, renderReviewControls: noop, renderError: noop, updateBypassControls: noop, updateWorkflowControls: noop, updateDataControls: noop});
+  update(); assert.equal(answer.disabled, true); assert.equal(events.at(-1).detail.busy, true);
+  busy = false; update(); assert.equal(answer.disabled, false); assert.equal(events.at(-1).detail.busy, false);
+  assert.equal(events.at(-1).type, "autokaggle:state");
+});
 
 test("An explicit project link takes priority over the stored conversation", async () => {
   const opened = [];
@@ -1287,13 +1299,15 @@ test("A lost sign-in stops status polling on the first unauthorized response", a
 
 test("Expired sign-in offers a link back to this saved project", () => {
   const { $ } = dom(); const state = { projectId: "p1", authRequired: true, conversation: { status: "error" } };
-  $("data-dialog").open = true; $("data-dialog").close = () => { $("data-dialog").open = false; };
+  const dialogs = ["summary-dialog", "data-dialog", "workspace-dialog", "answer-dialog"];
+  for (const id of dialogs) { $(id).open = true; $(id).close = () => { $(id).open = false; }; }
   state.dismissedError = "Sign in to continue:Your sign-in has expired. Sign in again to reopen your saved conversation. Your recorded answers are kept.";
   uiFunction("renderError", { state, $, working: () => false })();
   assert.equal($("retry-action").hidden, true); assert.equal($("sign-in-again").hidden, false);
   assert.equal($("sign-in-again").href, "/login?next=%2F%3Fproject%3Dp1");
   assert.match($("error-text").textContent, /recorded answers are kept/i);
-  assert.equal($("data-dialog").open, false); assert.equal($("error-banner").hidden, false); assert.equal($("dismiss-error").hidden, true);
+  for (const id of dialogs) assert.equal($(id).open, false, id);
+  assert.equal($("error-banner").hidden, false); assert.equal($("dismiss-error").hidden, true);
 });
 
 test("A failed checkpoint shows a usable saved-answer retry instead of disabled review links", () => {

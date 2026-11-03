@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import advisor, conversation, onboarding_setup, workflow, notifications, submissions, observability
+from . import advisor, conversation, onboarding_setup, workflow, notifications, submissions, observability, workspace, sources
 from .access import AccessGate
 from .email_auth import USER_COOKIE
 from .core import datasets
@@ -62,6 +62,7 @@ class ProjectPatch(BaseModel):
     brief: str | None = Field(default=None, max_length=12000)
     answers: AnswerPatch | None = None
     design: DesignPatch | None = None
+    storage_accepted: bool = False
 
 
 class AdviceRequest(StrictModel):
@@ -205,7 +206,11 @@ def create_app(data_dir: Path | None = None):
         if not lock.acquire(blocking=False):
             raise HTTPException(409, "This challenge is busy. Wait for the current action to finish.")
         try:
-            yield get(project_id, request)
+            item = get(project_id, request)
+            path = request.url.path
+            if request.method != "DELETE" and not path.endswith(("/privacy", "/setup")) and "/handoff" not in path:
+                workspace.require_storage(item)
+            yield item
         finally:
             lock.release()
 
@@ -224,6 +229,7 @@ def create_app(data_dir: Path | None = None):
         event(item, "trial", base.get("status", "unavailable"), base.get("detail", "Development trial finished."))
 
     def advice(item, kind):
+        workspace.require_storage(item)
         note = advisor.advise(item, kind, reserve=store.save)
         if advisor.apply_supported_updates(item, note):
             invalidate(item)
@@ -274,11 +280,17 @@ def create_app(data_dir: Path | None = None):
     @app.post("/api/projects")
     def create(body: ProjectPatch, request: Request, response: Response):
         access.require_create(request)
+        if (body.brief or body.answers is not None or body.design is not None) and not body.storage_accepted and workspace.consent_required({}):
+            raise HTTPException(428, "Accept data storage before adding research content.")
         organizer = owner(request)
         if not organizer or len(organizer) < 32 or len(organizer) > 100:
             organizer = secrets.token_urlsafe(32)
             response.set_cookie("autokaggle_owner", organizer, httponly=True, samesite="lax", secure=access.secure_cookie(request), max_age=60*60*24*90)
         item = store.create(organizer, body.title or "", body.brief or "")
+        if body.storage_accepted:
+            import hashlib
+            item["_storage_consent"] = {"version": workspace.POLICY_VERSION, "accepted_at": now(),
+                "accepted_by": hashlib.sha256(organizer.encode()).hexdigest()}
         if body.answers:
             item["answers"].update(body.answers.model_dump(exclude_none=True))
         if body.design:
@@ -299,13 +311,15 @@ def create_app(data_dir: Path | None = None):
         result = conversation.conversation_view(item)
         result.update(project_id=item["id"], title=item["title"],
                       mode="model" if advisor.configured() else "rules",
-                      contact_required=not bool(onboarding_setup.get(item)["organizer_email"]))
+                      contact_required=not bool(onboarding_setup.get(item)["organizer_email"]),
+                      storage=workspace.consent_view(item))
         if working:
             result["status"] = "working"
             result["can_retry"] = False
         return result
 
     def require_contact(item):
+        workspace.require_storage(item)
         if not onboarding_setup.get(item)["organizer_email"]:
             raise HTTPException(422, "Enter an organizer email before starting the interview.")
 
@@ -457,6 +471,7 @@ def create_app(data_dir: Path | None = None):
             authorized = submissions.authenticate(store, project_id, token)
             if not authorized:
                 raise HTTPException(401, "The draft changed. Request a new submission token.")
+            workspace.require_storage(authorized[0])
             submit = submissions.submit_code if kind == "code" else submissions.submit
             return submit(store, authorized[0], request_id, payload, authorized[1])
         except RunnerUnavailable as exc:
@@ -501,11 +516,14 @@ def create_app(data_dir: Path | None = None):
     def change_conversation(project_id, request, operation, *args):
         with editing(project_id, request) as item:
             require_contact(item)
+            existing_ids = {m["id"] for m in conversation.ensure_conversation(item)["messages"]}
+            author = store.author_label(project_id, owner(request))
             old_email = onboarding_setup.get(item)["organizer_email"]
             old_scopes = copy.deepcopy({key: value.get("scope") for key, value in conversation.ensure_conversation(item)["items"].items()})
             invalidated = False
             def save_chat(changed):
                 nonlocal invalidated
+                workspace.stamp_answers(changed, existing_ids, author)
                 scopes = {key: value.get("scope") for key, value in conversation.ensure_conversation(changed)["items"].items()}
                 if not invalidated and scopes != old_scopes:
                     invalidate(changed)
@@ -742,6 +760,9 @@ def create_app(data_dir: Path | None = None):
         if token is None and not access.can_open(request, store):
             return RedirectResponse("/login?next=" + quote(str(request.url.path) + ("?" + request.url.query if request.url.query else ""), safe=""), status_code=303)
         return FileResponse(HERE / "static/index.html")
+
+    workspace.register(app, store, access, get, editing, conversation_output)
+    sources.register(app, store, pool, get, editing, conversation_output)
 
     (HERE / "static").mkdir(exist_ok=True)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")

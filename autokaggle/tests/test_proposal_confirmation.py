@@ -91,6 +91,39 @@ def test_setting_choice_must_answer_the_active_setting_question():
         c._validated_scope(reply("accepted", ["是的"], choice={"competition_type": "code", "evidence": ["是的"]}), "是的", state)
 
 
+@pytest.mark.parametrize("field,identifier,text,choice,expected", [
+    ("competition", "choice", "A prediction file is fine.", {"competition_type": "prediction"}, "prediction"),
+    ("competition", "choice", "我们要提交代码", {"competition_type": "code"}, "code"),
+    ("submissions", "allowance", "每天三次就够了", {"daily_submission_limit": 3}, 3),
+])
+def test_natural_choice_at_setting_checkpoint_is_saved(monkeypatch, field, identifier, text, choice, expected):
+    project = fresh_project()
+    state = c.ensure_conversation(project)
+    state["_requirements_assessed"] = True
+    state["_criterion_asks"][field + "." + identifier] = 2
+    c._checkpoint(state, field, criterion(field, identifier))
+    assert state["current_question"] is None
+    provider(monkeypatch, [reply(choice={**choice, "evidence": [text]})])
+    c.submit_message(project, text, "checkpoint-natural-choice")
+    assert state["status"] == "idle"
+    assert onboarding_setup.get(project)[c.SETTING_PROPOSALS[field]] == expected
+    assert state["items"][field]["status"] == "answered"
+    before = project["_model_calls"]
+    c.submit_message(project, text, "checkpoint-natural-choice")
+    assert project["_model_calls"] == before
+
+
+def test_unrelated_or_ambiguous_checkpoint_cannot_record_a_setting():
+    state = c.ensure_conversation(fresh_project())
+    c._checkpoint(state, "task", criterion("task", "metric"))
+    with pytest.raises(ValueError, match="active setting question"):
+        c._setting_choice(reply(choice={"competition_type": "code", "evidence": ["code"]}), "code", state)
+    c._checkpoint(state, "competition", criterion("competition", "choice"))
+    assert c._setting_choice(reply(), "yes", state) is None
+    with pytest.raises(ValueError, match="No proposal"):
+        c._accepted_proposal(reply("accepted", ["yes"]), "yes", state)
+
+
 def test_scientific_proposal_records_the_shown_value_with_the_confirmation(monkeypatch):
     project = fresh_project()
     question = f"Should the score be {METRIC_TEXT}?"

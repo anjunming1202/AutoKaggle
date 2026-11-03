@@ -175,3 +175,8 @@ Scope changes require rebuilt packages and review links. Validated organizer set
 Private project endpoints still return 404 for unauthorized or unknown IDs. Clients can check `GET /api/access` separately: `auth_kind: anonymous` requires sign-in; an authenticated account must not treat an unavailable project as an expired session. See [the recovery contract](INTERVIEW_RECOVERY.md).
 
 Required setting checkpoints use validated chat choices, such as `Competition: code`, `Competition: prediction`, and `Daily submissions: 5`, through the normal messages endpoint. They cannot use scope acceptance or exceptions. The conversation view declares Problem, Method and deployment, Baseline, and Setup sections. An active checkpoint identifies its checklist item and current section. Model context includes only a boolean confirming whether the private organizer contact is recorded; it does not include the address.
+
+
+## Session collaboration and data controls
+
+See [the workspace API](WORKSPACE.md#api-additions) for source import, explicit storage acceptance, session and dataset erasure, answer replacement, handoff codes, and revision after measured attempts. Research writes require the current storage notice (428 until accepted). The existing authorization, project locks, quotas, and retry identities remain in force.

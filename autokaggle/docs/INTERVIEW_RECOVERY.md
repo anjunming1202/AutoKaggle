@@ -25,6 +25,14 @@ The inspected deployment reported no container restart. The owner later supplied
 
 The conversation prompt explains checkpoint corrections and reassessment. No dataset split, evaluator, model selection, model reasoning effort, email delivery service, or production conversation was changed by this PR.
 
+## Integration with session tools
+
+The merge with the session-tools change preserves storage acceptance, imported references, answer removal, shared sessions, free-text budgets, and the reassessment flag. The interview controls require both storage acceptance and an active sign-in.
+
+Explicit competition and daily-allowance choices can answer an active setting checkpoint in chat. They still need evidence from the current message and pass the same server validator. A checkpoint with no pending proposal cannot use a bare yes as a setting choice. This route uses the proposal-confirmation change already merged into this branch through PR #4. PR #9 is not included.
+
+An expired sign-in closes the Sessions and Edit answer dialogs as well as the older dialogs. Access errors in session tools request the main chat's account check, which can show the sign-in link. The live recovery fixture accepts the storage notice before it adds research content.
+
 ## Verification
 
 Run the Python and Node tests, then the real model check:

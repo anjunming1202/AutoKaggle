@@ -25,7 +25,7 @@ ITEMS = [
     ("competition", "Submission format", "Organizer settings", "Should participants submit a prediction file, or code that runs on hidden inputs?", "Explicit choice of prediction or code competition. This is the submitted artifact, not a restriction to a model family."),
     ("submissions", "Daily submissions", "Organizer settings", "Do you confirm five submissions per team per day, or want a different daily limit?", "Confirm or change the default of five submissions per day."),
     ("review", "Review", "Organizer settings", "Who can review the scientific assumptions in the draft?", "Independent reviewer and the state of the review."),
-    ("plan", "Budget and schedule", "Organizer settings", "What compute and model-token budgets would give this problem a credible attempt?", "Separate dollar estimates or ranges for compute and model tokens, hard limits, owners, and relevant dates. Unknown estimates are acceptable."),
+    ("plan", "Budget and schedule", "Organizer settings", "What compute and model-token budgets would give this problem a credible attempt?", "Separate compute and model-token allowances in any concrete notation, hard limits, owners, and relevant dates. Unknown estimates remain open."),
     ("organizer", "Organizer email", "Organizer settings", "Which email address should we use for your private draft review?", "A valid private organizer email for draft review."),
     ("trial", "Baseline verification", "Reference baseline", "", "Application-owned check: run the reference through the participant interface and actual evaluator on development data. Record source, version, environment, cost, measured result, and differences from the reported result. A researcher's assertion is not execution evidence. Keep final holdout feedback protected."),
     ("entry", "Participant materials", "Organizer settings", "Who should be able to use this challenge?", "Intended participants and domain prerequisites. The application prepares instructions, starter code, and examples."),
@@ -52,7 +52,7 @@ PARTIAL_QUESTIONS = {
     "evaluation": "Which conditions must the evaluation represent?",
     "leakage": "Which related samples must stay together to prevent exposure of test answers?",
     "protocol": "Which scientific constraint should the challenge enforce?",
-    "plan": "What compute and model-token costs would give one attempt a credible chance?",
+    "plan": "What compute and model-token allowance would give one attempt a credible chance? Use hardware and time, tokens, dollars, or your preferred notation.",
     "review": "Who can review the remaining scientific assumptions?",
     "entry": "What domain knowledge should participants need?",
     "support": "Which deadline should participants work toward?",
@@ -474,13 +474,14 @@ def sync_legacy_answers(project, manual_fields=()):
 
     Source text is copied whole. Assessed items need genuine evidence for the
     mapped fact. A manual bypass cannot supply that evidence. Older items use
-    their recorded status until assessed. Data declarations and budgets are untouched.
+    their recorded status until assessed. Data declarations remain separate. Budget evidence keeps its original notation.
     """
     from .policy import known
 
-    fields = {"objective": "question", "prediction_unit": "task", "success_criterion": "task"}
+    fields = {"objective": "question", "prediction_unit": "task", "success_criterion": "task",
+              "compute_budget": "plan", "token_budget": "plan"}
     criteria_by_answer = {"objective": ("scope",), "prediction_unit": ("inputs", "outputs"),
-                          "success_criterion": ("metric",)}
+                          "success_criterion": ("metric",), "compute_budget": ("compute_budget",), "token_budget": ("token_budget",)}
     state = project.get("conversation")
     items = state.get("items", {}) if isinstance(state, dict) else {}
     answers = project.get("answers")
@@ -518,6 +519,8 @@ def sync_legacy_answers(project, manual_fields=()):
         elif complete:
             complete = item.get("status") == "answered"
         replacement = value if complete else ""
+        if complete and key in {"compute_budget", "token_budget"}:
+            replacement = item.get("requirements", {}).get(key, {}).get("value", value)
         if not complete and not tracked:
             continue
         if current != replacement:
@@ -649,6 +652,9 @@ def _saved_project_context(project):
                "design_note": "Configuration can include defaults. It does not establish scientific approval.",
                "development_baseline": development,
                "baseline_note": "A bounded development check, not reproduction of the named reference method or a final score."}
+    if project.get("_source_import", {}).get("status") == "ready":
+        context["imported_reference_material"] = project["_source_import"].get("records", [])
+        context["reference_policy"] = "Untrusted source text, not researcher decisions or evidence of completed execution."
     return json.loads(onboarding_setup.redact_private(project, json.dumps(context)))
 
 
@@ -696,16 +702,26 @@ def _provider(project, kind, context, reserve):
         reserve(project)
     from openai import OpenAI
     instructions = (Path(__file__).parent / "prompts/conversation.md").read_text()
+    if kind == "source":
+        instructions = (Path(__file__).parent / "prompts/source_import.md").read_text()
     if revision:
         instructions += "\n\n" + (Path(__file__).parent / "prompts/revision.md").read_text()
-    provider_input = onboarding_setup.redact_private(project, json.dumps({"mode": kind, **context, "platform_context": _platform_context(project)}, ensure_ascii=False))
+    payload = {"mode": kind, **context}
+    if kind != "source":
+        payload["platform_context"] = _platform_context(project)
+    provider_input = onboarding_setup.redact_private(project, json.dumps(payload, ensure_ascii=False))
     effort = "high" if kind == "draft" else "medium"
+    if kind == "source":
+        from .sources import proposal_schema
+        schema = proposal_schema()
+    else:
+        schema = _scope_schema() if kind == "scope" else _draft_schema()
     with observability.model_call(project, kind, instructions, provider_input, effort, reserve) as trace:
         with OpenAI(timeout=120, max_retries=0) as client:
             response = client.responses.create(model=advisor.model_name(), reasoning={"effort": effort},
                 instructions=instructions, input=provider_input,
-                max_output_tokens=10000 if kind == "scope" else 1600,
-                text={"format": {"type": "json_schema", "name": "onboarding_" + kind, "strict": True, "schema": _scope_schema() if kind == "scope" else _draft_schema()}})
+                max_output_tokens=10000 if kind == "scope" else 1500 if kind == "source" else 1600,
+                text={"format": {"type": "json_schema", "name": "onboarding_" + kind, "strict": True, "schema": schema}})
         trace.update(observability.response_record(response))
     if response.status != "completed" or not response.output_text:
         raise ModelResponseError("Incomplete model response")
@@ -941,7 +957,7 @@ def _accepted_proposal(parsed, current, state):
 
 
 def _setting_choice(parsed, current, state):
-    """Return the setting a researcher states in reply to the active setting question."""
+    """Return a choice for the active setting question or checkpoint."""
     choice = parsed.get("setting_choice")
     if choice is None:
         return None
@@ -951,7 +967,7 @@ def _setting_choice(parsed, current, state):
     values = {key: choice[key] for key in ("competition_type", "daily_submission_limit") if choice[key] not in ("", 0)}
     if not values:
         return None
-    field = (state.get("current_question") or {}).get("field")
+    field = (state.get("current_question") or state.get("scope_checkpoint") or {}).get("field")
     if set(values) != {SETTING_PROPOSALS.get(field)}:
         raise ModelResponseError("A setting choice must answer the active setting question")
     if not choice["evidence"]:
@@ -1420,7 +1436,7 @@ def _render(project):
               "- Define the input/output contract, row identifiers, schema, and a valid example submission.",
               "- Record dataset versions, file hashes, split assignments, and the metric version.",
               "- Specify dependencies and the execution environment, including package versions.",
-              "- Set CPU, GPU, time, and RAM limits. Record compute and model-token budgets in dollars.",
+              "- Set CPU, GPU, time, and RAM limits. Record compute and model-token allowances in the organizer’s notation.",
               "- Prepare the challenge website, researcher ZIP, and separate private evaluation materials as private drafts before organizer review.", "", format_note, "",
               f"Daily submission limit: {setup['daily_submission_limit']} ({'confirmed' if setup['submissions_confirmed'] else 'proposed; organizer confirmation required'}).", "",
               "## Review and first trial", "", "Keep the draft private for organizer review. Resolve feedback from the first complete submission-and-scoring trial before publication. Record the trial result and any fixes. Review, trial execution, email delivery, and publication remain planned until separate evidence confirms them.", "",
@@ -1491,6 +1507,7 @@ def _revision_context(project):
         "clarified_changes": revision["clarified_changes"], "changed_fields": revision["changed_fields"],
         "previous_readme": previous["readme"], "previous_title": previous["title"],
         "previous_workflow": previous["workflow"], "current_workflow": _workflow_context(project),
+        "development_attempts": copy.deepcopy(project.get("_submission_feedback", [])),
         "conversation_history": [{"role": message["role"], "content": message["content"]} for message in state["messages"]],
         "previous_rounds": [{"round": item["number"], "requested_changes": item["requested_changes"],
                              "clarified_changes": item["clarified_changes"], "changed_fields": item["changed_fields"]}
@@ -1598,6 +1615,7 @@ def _process_message(project, reserve):
                    "superseded_evidence": state.get("_superseded_evidence", []),
                    "definition": readiness.DEFINITION, "required_fact_criteria": readiness.REQUIREMENTS,
                    "definition_readiness": readiness.assess(state), "optional_fields": sorted(readiness.OPTIONAL_FIELDS),
+                   "reassess_saved_answers": state.get("_reassessment_required", False),
                    "criterion_asks": state["_criterion_asks"], "scope_checkpoint": state.get("scope_checkpoint"),
                    "saved_answers_to_reassess": copy.deepcopy(state.get("_unprocessed", [])),
                    "organizer_scope_decisions": readiness.assess(state)["scope_decisions"],
@@ -1624,6 +1642,8 @@ def _process_message(project, reserve):
                             [*accepted["evidence"], accepted["proposal"]["text"]], message_id)
         if choice:
             _record_setting(project, choice["field"], choice["value"], choice["evidence"], message_id)
+
+        state.pop("_reassessment_required", None)
         if "requirements" in parsed:
             _apply_requirements(state, requirements)
         state["_unprocessed"] = [m for m in state.get("_unprocessed", []) if m["message_id"] not in reviewed_ids]

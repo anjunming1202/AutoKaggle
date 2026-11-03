@@ -1,5 +1,13 @@
 # Validation
 
+## PR #3 merge checks — 3 November 2026
+
+The PR #3 integration with current main passed 1,125 Python tests and 157 Node client tests. Three expected warnings came from invalid prediction classes and numeric overflow. The tests cover setting choices at checkpoints, rejection of unrelated setting choices, retry identity, storage acceptance, answer reassessment, and expired sign-in with the session dialogs.
+
+Live OpenRouter validation used `openai/gpt-6.1-sol` with medium reasoning. The recovery script passed in two calls. A separate checkpoint check passed in three calls: an explicit Chinese code-submission choice was saved, an explicit Chinese allowance of three was saved, and a bare yes without a pending proposal left the competition type unset. Reports stay in the ignored test-results directory.
+
+Browser validation used a temporary local store and captured local mail. It checked the storage notice, the Sessions dialog, and a private session request after the test account expired. The dialog closed and exposed a sign-in link back to the same project. No production deployment or Gmail delivery was tested. PR #9 was not included.
+
 ## Interview and sign-in recovery — 2 November 2026
 
 The recovery change passed 1,063 Python tests and 149 Node client tests. Three expected warnings came from invalid prediction classes and numeric overflow. New checks cover natural negative corrections, preservation of unrelated facts, checkpoint messages and deferral, targeted scope review, interrupted server flags, saved-answer reassessment, bounded status polling, reconnection without a model retry, and expired sign-in.
@@ -19,6 +27,27 @@ The follow-up setting fix passed 1,069 Python tests and 152 Node tests. The exte
 That browser draft exposed a repeated request for the already-recorded organizer email. The model context withheld the address without stating that contact was recorded. A boolean status and prompt rule now supply that information. A further live high-reasoning draft call passed in one model call: its context contained the true status without the address, and its next actions did not request the email again.
 
 Reports and screenshots are retained only in the ignored local test-results directory. This change has not been deployed by this verification run. It does not establish scientific completeness, live email delivery, or recovery of the hosted sessions after deployment.
+
+## Research session controls — 2 November 2026
+
+The session-controls PR passed 1,084 Python tests and 142 Node client tests. Three expected warnings came from invalid class and numeric inputs. These checks cover storage acceptance, session access and deletion, backup restore filtering, handoff expiry and revocation, answer removal and replacement, request retries, preserved submission quotas, source import limits, and free-form compute estimates. They also verify that rejected creation requests store no research content and that leaving a shared session revokes submission tokens.
+
+Live checks used OpenRouter with `openai/gpt-6.1-sol`. The source, collaboration, and erasure test passed in four real model calls with medium reasoning. It retrieved the SPOCK 2.0 paper and the public SPOCK repository, required approval before adding a proposed brief, recorded hardware-time and token estimates, replaced a researcher answer, checked retry behavior, revoked collaborator access, and deleted its temporary session. The repository was frozen at commit `05beb10ae06f3c66a7bd018e430645b91287436e`. Imported code was not executed.
+
+A separate live revision test passed in three model calls. Draft generation used high reasoning; revision used medium reasoning, including one bounded response repair. It started from an explicitly seeded synthetic challenge definition, built a research package, scored a real development prediction file, and revised the compute estimate with that measured result in context. The saved target and metric remained intact. This check establishes revision after a scored attempt; it does not establish completion of the scientific interview or reproduction of a scientific reference method.
+
+One further live call checked the organizer-advice prompt with medium reasoning. Its evidence-validated updates preserved `A100 x8 x24h` and `2M tokens` without requiring or inventing dollar estimates.
+
+Live browser testing used a temporary local store. It covered storage acceptance, session creation and switching, a real paper/repository import, approval of an edited starting brief, a real interview reply, answer-edit controls, and session, sharing, revision, and deletion dialogs. The final source proposal was limited to 2,200 characters and generated in one live call; the approved brief then produced an interview reply in one further call. Testing found an answer-edit button that stayed disabled after a reply. The fix passed a client regression test and a browser recheck. The page had no horizontal or document overflow at 390 × 844. Session tools scrolled inside their dialog. No browser warnings or errors were observed.
+
+To repeat the live checks, load the private OpenRouter key from the repository-root `.env` and run:
+
+```sh
+python -m autokaggle.scripts.live_workspace_verify
+python -m autokaggle.scripts.live_iteration_verify
+```
+
+Reports and screenshots remain in the ignored local `autokaggle/test-results/` directory. These tests did not send email, deploy to Civo, execute submitted code in a live sandbox, or change production data. Session deletion does not erase separate sign-in account records or physically remove historical backup copies. The operator must follow the backup and erasure procedures in [Research session controls](WORKSPACE.md).
 
 The standalone source snapshot was checked on 30 October 2026. These results describe the tested behavior. They do not establish scientific validity for a new challenge.
 

@@ -98,3 +98,15 @@ Added at the project owner's request on 29 October 2026.
 - If the key, model, or service is unavailable, report the blocked live check. Do not silently substitute another provider or describe simulated responses as live evidence.
 - Record the model, tested behavior, result, and any external limits. Keep test inputs small and relevant.
 - Keep the API key in the private environment file. Never copy it into source code, documentation, logs, screenshots, or committed files. Keep `.env` excluded from Git.
+
+
+## Research session controls — 2 November 2026
+
+- Keep the compact chat as the main interface. Sessions provides resume/delete, source import, shared handoff, attempt review, and data controls.
+- Public paper/repository imports are untrusted preparation material. Freeze repository commits, bound retrieval and extraction, and never execute imported code. A proposed brief requires explicit human approval before it becomes interview evidence. Dataset import and reference reproduction remain separate work.
+- Accept compute and model-token estimates in hardware-time, tokens, dollars, or another concrete notation. Preserve units and do not invent conversion prices. Unknown remains open. Estimates do not change supported runtime capabilities.
+- Require explicit storage acceptance for research writes. Erasure must remove live files and derivative records and revoke obsolete capabilities. Preserve the current erasure journal independently of backups; restored old data must not reappear.
+- Session owners retain deletion and access management. A one-use, expiring handoff code adds a collaborator to the same project without merging account ownership or granting another project or Internal access.
+- Removing a researcher turn removes dependent facts and generated records. Keep independent scientific decisions and remaining researcher messages. Reassess supported facts without reconstructing withdrawn content. Keep request replay safe and retain only non-content quota counts where results are erased.
+- Revision after attempts must include actual development results and preserve the score contract until a recorded change requires rebuilding. Never use private final scores for iteration.
+- See autokaggle/docs/WORKSPACE.md for the implemented contract. Session deletion does not erase separate email-account records or physically sanitize historical backup files; those operator obligations must be stated accurately.
