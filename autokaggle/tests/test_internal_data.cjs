@@ -3,8 +3,8 @@ const {test} = require("node:test");
 const assert = require("node:assert/strict");
 const D = require("../static/internal-data.js");
 const fixture = () => ({project: {id: "project", setup: {daily_submission_limit: 5, submissions_confirmed: false},
-  conversation: {messages: [{id: "m1", role: "user", content: "每天10次"}, {id: "m2", role: "assistant", content: "Saved text"}],
-    items: {submissions: {status: "missing", value: "5", evidence: [{message_id: "m1", quotes: ["每天10次"]}]}},
+  conversation: {messages: [{id: "m1", role: "user", content: "10 per day"}, {id: "m2", role: "assistant", content: "Saved text"}],
+    items: {submissions: {status: "missing", value: "5", evidence: [{message_id: "m1", quotes: ["10 per day"]}]}},
     _history: [{field: "submissions", before: {value: "old"}, message_id: "m1", operation: "append"}]},
   _model_traces: [{id: "c1", kind: "scope", trigger: {message_id: "m1"}, output: '{"updates":[]}', usage: {input_tokens: 10, output_tokens: 6, reasoning_tokens: 4}}, {id: "legacy", kind: "scope", started_at: "2026-10-31"}]}, review: {field_definitions: [{id: "submissions", label: "Daily submissions", group: "Setup"}]}});
 
@@ -34,7 +34,7 @@ test("saved settings, missing values and historical records are not rewritten", 
 });
 test("search includes full content and filtering preserves recorded order", () => {
   const rows = D.rows(fixture(), "messages");
-  assert.equal(D.select(rows, "每天10次", "user", false)[0].id, "m1");
+  assert.equal(D.select(rows, "10 per day", "user", false)[0].id, "m1");
   assert.deepEqual(D.select(rows, "", "", true).map(r => r.id), ["m2", "m1"]);
   assert.equal(D.select(rows, "missing string", "", false).length, 0);
 });
