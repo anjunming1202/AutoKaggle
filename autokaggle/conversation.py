@@ -741,14 +741,6 @@ def _evidence(text, current):
     raise ModelResponseError("Evidence was not in the current user message")
 
 
-def _explicit_correction(text):
-    """Recognize direct changes without requiring a special correction keyword."""
-    return bool(re.search(
-        r"\b(correction|correcting|actually|instead|replace|revise|update|change|now|meant|wrong|should be|remove|exclude|omit|drop)\b"
-        r"|\b(?:do\s+not|don['’]t|no\s+longer|stop)\s+(?:use|using|include|including|allow|allowing|require|requiring|consider|considering)\b"
-        r"|\b(?:only|just)\s+use\b|\buse\s+only\b", text, re.I))
-
-
 def _validate_scope(parsed, current, state):
     # Older saved/test provider responses can be read, but cannot establish
     # requirement completion. The live provider schema requires assessments.
@@ -781,8 +773,9 @@ def _validate_scope(parsed, current, state):
             raise ModelResponseError("Invalid correction excerpts")
         if operation == "append" and supersedes:
             raise ModelResponseError("An append cannot remove previous facts")
-        if operation == "correct" and not _explicit_correction(current):
-            raise ModelResponseError("A replacement needs an explicit correction")
+        # Whether a message corrects something is judged with evidence, not by
+        # wording. The replaced spans must match exactly, and the researcher sees
+        # every replacement in the reply (_correction_notice).
         if operation == "correct":
             old = state["items"][key]["value"]
             confirmations = [resolution["detail"] for criterion in readiness.REQUIREMENTS[key]
@@ -849,10 +842,15 @@ def _validate_requirements(parsed, current, state, updates):
         if status in {"missing", "deferred"} and not record["reason"].strip():
             raise ModelResponseError("Open requirements need a specific gap")
         previous = state["items"][field].get("requirements", {}).get(identifier, {})
+        decision_sources = _source_quotes(previous) + ([accepted["detail"]] if accepted else [])
+        # An added detail or unknown must not reopen an accepted decision.
+        # Require a validated replacement of evidence for this requirement.
         explicit_correction = bool(accepted and accepted["mode"] == "confirmed" and status in {"missing", "deferred"}
             and any(quote in current for quote in evidence)
-            and any(update["field"] == field and any(quote in update["evidence"] for quote in evidence) for update in updates)
-            and _explicit_correction(current))
+            and any(update["field"] == field and update["operation"] == "correct"
+                    and any(quote in update["evidence"] for quote in evidence)
+                    and any(span in source or source in span for span in update["supersedes"] for source in decision_sources)
+                    for update in updates))
         if status == "conflicting":
             prior = _source_quotes(previous)
             resolved = readiness.scope_resolution(field, state["items"][field], identifier)
@@ -1118,6 +1116,17 @@ def _invalidate_scope_dependents(state, changed_field):
                     break
 
 
+def _correction_notice(updates):
+    """Tell the researcher which recorded text each correction replaced."""
+    def short(text):
+        return text if len(text) <= 160 else text[:157] + "…"
+    changes = [f"“{short(old)}” → “{short(_replacement_text(old, new))}”" for update in updates if update["operation"] == "correct"
+               for old, new in zip(update["supersedes"], update["evidence"])]
+    if changes:
+        return "I replaced " + "; ".join(changes) + ". If I misunderstood, say what should stay."
+    return None
+
+
 def _replacement_text(prior_span, evidence):
     """Keep context when an explicit correction changes one dollar amount.
 
@@ -1254,12 +1263,13 @@ def _checkpoint(state, field, criterion, reason=None):
     _reset_error(state)
     same_decision = previous and all(previous.get(key) == checkpoint[key] for key in ("field", "requirement_id"))
     if not same_decision:
-        instructions = {
-            "competition": "Choose Prediction submissions or Code submissions below, or reply with your choice in chat. This required organizer setting cannot be resolved through scope acceptance.",
-            "submissions": "Confirm or change the daily submission allowance below, or state the allowance in chat. This required organizer setting cannot be resolved through scope acceptance.",
-            "organizer": "Enter your private correspondence email in the email step. This required setting cannot be resolved through scope acceptance.",
-        }
-        _message(state, "assistant", instructions.get(field) or f"We have not resolved {criterion['label'].lower()}. Open this checklist item to confirm the scope, record an explicit exception, or supply a new decision. I will not ask the same detail again automatically.")
+        # The checkpoint card shows each setting's own control; the message only
+        # says which kind of decision this is.
+        if field in readiness.SERVER_FIELDS:
+            text = f"{criterion['label']} is a required organizer setting and cannot be resolved through scope acceptance. Use the option shown below, or reply in chat."
+        else:
+            text = f"We have not resolved {criterion['label'].lower()}. Open this checklist item to confirm the scope, record an explicit exception, or supply a new decision. I will not ask the same detail again automatically."
+        _message(state, "assistant", text)
     elif state["messages"] and state["messages"][-1]["role"] == "user":
         _message(state, "assistant", "Your update is saved. The remaining gap is shown below. You can reply with a decision, review the recorded scope, or leave this detail open and continue.")
 
@@ -1644,6 +1654,9 @@ def _process_message(project, reserve):
             _record_setting(project, choice["field"], choice["value"], choice["evidence"], message_id)
 
         state.pop("_reassessment_required", None)
+        notice = _correction_notice(updates)
+        if notice:
+            _message(state, "assistant", notice)
         if "requirements" in parsed:
             _apply_requirements(state, requirements)
         state["_unprocessed"] = [m for m in state.get("_unprocessed", []) if m["message_id"] not in reviewed_ids]
