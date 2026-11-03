@@ -741,14 +741,6 @@ def _evidence(text, current):
     raise ModelResponseError("Evidence was not in the current user message")
 
 
-def _explicit_correction(text):
-    """Recognize direct changes without requiring a special correction keyword."""
-    return bool(re.search(
-        r"\b(correction|correcting|actually|instead|replace|revise|update|change|now|meant|wrong|should be|remove|exclude|omit|drop)\b"
-        r"|\b(?:do\s+not|don['’]t|no\s+longer|stop)\s+(?:use|using|include|including|allow|allowing|require|requiring|consider|considering)\b"
-        r"|\b(?:only|just)\s+use\b|\buse\s+only\b", text, re.I))
-
-
 def _validate_scope(parsed, current, state):
     # Older saved/test provider responses can be read, but cannot establish
     # requirement completion. The live provider schema requires assessments.
@@ -781,8 +773,9 @@ def _validate_scope(parsed, current, state):
             raise ModelResponseError("Invalid correction excerpts")
         if operation == "append" and supersedes:
             raise ModelResponseError("An append cannot remove previous facts")
-        if operation == "correct" and not _explicit_correction(current):
-            raise ModelResponseError("A replacement needs an explicit correction")
+        # Whether a message corrects something is judged with evidence, not by
+        # wording. The replaced spans must match exactly, and the researcher sees
+        # every replacement in the reply (_correction_notice).
         if operation == "correct":
             old = state["items"][key]["value"]
             confirmations = [resolution["detail"] for criterion in readiness.REQUIREMENTS[key]
@@ -851,8 +844,7 @@ def _validate_requirements(parsed, current, state, updates):
         previous = state["items"][field].get("requirements", {}).get(identifier, {})
         explicit_correction = bool(accepted and accepted["mode"] == "confirmed" and status in {"missing", "deferred"}
             and any(quote in current for quote in evidence)
-            and any(update["field"] == field and any(quote in update["evidence"] for quote in evidence) for update in updates)
-            and _explicit_correction(current))
+            and any(update["field"] == field and any(quote in update["evidence"] for quote in evidence) for update in updates))
         if status == "conflicting":
             prior = _source_quotes(previous)
             resolved = readiness.scope_resolution(field, state["items"][field], identifier)
@@ -1116,6 +1108,17 @@ def _invalidate_scope_dependents(state, changed_field):
                 if not current or current["mode"] != "confirmed" or current["detail"] != source["detail"]:
                     record.update(status="missing", reason="The organizer scope decision supporting this detail changed or was removed.")
                     break
+
+
+def _correction_notice(updates):
+    """Tell the researcher which recorded text each correction replaced."""
+    def short(text):
+        return text if len(text) <= 160 else text[:157] + "…"
+    changes = [f"“{short(old)}” → “{short(_replacement_text(old, new))}”" for update in updates if update["operation"] == "correct"
+               for old, new in zip(update["supersedes"], update["evidence"])]
+    if changes:
+        return "I replaced " + "; ".join(changes) + ". If I misunderstood, say what should stay."
+    return None
 
 
 def _replacement_text(prior_span, evidence):
@@ -1644,6 +1647,9 @@ def _process_message(project, reserve):
             _record_setting(project, choice["field"], choice["value"], choice["evidence"], message_id)
 
         state.pop("_reassessment_required", None)
+        notice = _correction_notice(updates)
+        if notice:
+            _message(state, "assistant", notice)
         if "requirements" in parsed:
             _apply_requirements(state, requirements)
         state["_unprocessed"] = [m for m in state.get("_unprocessed", []) if m["message_id"] not in reviewed_ids]
