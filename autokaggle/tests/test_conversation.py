@@ -259,7 +259,7 @@ def users(state):
     return [message for message in state["messages"] if message["role"] == "user"]
 
 
-def test_initial_view_has_three_interview_stages_without_legacy_fill(project):
+def test_initial_view_has_four_interview_stages_without_legacy_fill(project):
     state = c.ensure_conversation(project)
     view = c.conversation_view(project)
     assert len(view["checklist"]) == 17
@@ -272,7 +272,7 @@ def test_initial_view_has_three_interview_stages_without_legacy_fill(project):
     assert c.ensure_conversation(project) is state
     view["messages"].clear()
     assert state["messages"]
-    assert [stage["id"] for stage in view["interview"]["stages"]] == ["problem", "approach", "baseline"]
+    assert [stage["id"] for stage in view["interview"]["stages"]] == ["problem", "approach", "baseline", "setup"]
     assert view["interview"]["current_stage"] == "problem"
     assert view["interview"]["next_question"] == c.INITIAL_MESSAGE
     assert view["interview"]["next_question"].count("?") <= 1
@@ -346,7 +346,7 @@ def test_topic_understanding_counts_requirements_and_keeps_trial_separate(projec
     state["items"]["difficulty"]["requirements"] = {"reference": recorded_requirement("Compare against a random forest.")}
     view = c.conversation_view(project)
     assert {stage["id"]: stage["understanding"]["score"] for stage in view["interview"]["stages"]} == {
-        "problem": 12, "approach": 12, "baseline": 33,
+        "problem": 12, "approach": 12, "baseline": 33, "setup": 0,
     }
     trial = next(item for item in view["checklist"] if item["id"] == "trial")
     assert trial["owner"] == "agent" and not trial["active"]

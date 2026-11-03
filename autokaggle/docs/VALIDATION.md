@@ -1,5 +1,33 @@
 # Validation
 
+## PR #3 merge checks — 3 November 2026
+
+The PR #3 integration with current main passed 1,125 Python tests and 157 Node client tests. Three expected warnings came from invalid prediction classes and numeric overflow. The tests cover setting choices at checkpoints, rejection of unrelated setting choices, retry identity, storage acceptance, answer reassessment, and expired sign-in with the session dialogs.
+
+Live OpenRouter validation used `openai/gpt-6.1-sol` with medium reasoning. The recovery script passed in two calls. A separate checkpoint check passed in three calls: an explicit Chinese code-submission choice was saved, an explicit Chinese allowance of three was saved, and a bare yes without a pending proposal left the competition type unset. Reports stay in the ignored test-results directory.
+
+Browser validation used a temporary local store and captured local mail. It checked the storage notice, the Sessions dialog, and a private session request after the test account expired. The dialog closed and exposed a sign-in link back to the same project. No production deployment or Gmail delivery was tested. PR #9 was not included.
+
+## Interview and sign-in recovery — 2 November 2026
+
+The recovery change passed 1,063 Python tests and 149 Node client tests. Three expected warnings came from invalid prediction classes and numeric overflow. New checks cover natural negative corrections, preservation of unrelated facts, checkpoint messages and deferral, targeted scope review, interrupted server flags, saved-answer reassessment, bounded status polling, reconnection without a model retry, and expired sign-in.
+
+Read-only inspection of the hosted conversation matched the screenshot and confirmed the correction-validation failure. The owner then supplied the second session link. It was idle with a completed, accepted model response and no pending answer. Its required competition choice was unresolved, but the checkpoint directed the researcher to scope controls that cannot accept server-owned settings. Signing in restored that unresolved checkpoint. No hosted conversation was edited. The inspected deployment reported no container restart. See [Interview checkpoint and session recovery](INTERVIEW_RECOVERY.md) for the findings and all changes.
+
+The final live OpenRouter check passed in two real `openai/gpt-6.1-sol` calls with medium reasoning. A temporary kernel fixture accepted the reported “don't use top hat” correction, retained the independent Fourier parameters, signed out and back into the same account, recovered an interrupted answer, reassessed saved replies, and verified retry identity. Explicit checkpoint deferral kept the scientific requirement incomplete. The test used the normal email-code/account path with captured local mail and no resend delay. It did not test Gmail delivery.
+
+Live browser testing used a separate temporary store and two further real model calls. It recovered an interrupted correction through the visible Retry saved answer control, signed out and back in, resumed the same conversation, and submitted another answer successfully. An expired local session also exercised the private-project 404 path. The data dialog closed and exposed a sign-in link back to the same project. The recovery banner fitted a 390 × 844 viewport without horizontal or document overflow. No browser warnings or errors were observed.
+
+```sh
+python -m autokaggle.scripts.live_interview_recovery_verify
+```
+
+The follow-up setting fix passed 1,069 Python tests and 152 Node tests. The extended live script passed in two medium-reasoning model calls. It also reopened the two required setting checkpoints and recorded code submissions and five daily submissions without another model call or a bypass. Browser testing signed in at the competition checkpoint, selected code, rejected an invalid zero allowance, and confirmed five submissions. An explicit synthetic definition fixture supplied the other scientific decisions. The resulting draft used one real high-reasoning model call. These seeded facts do not establish completion of a human interview. The mobile page fitted 390 × 844 with internal conversation scrolling and no document overflow.
+
+That browser draft exposed a repeated request for the already-recorded organizer email. The model context withheld the address without stating that contact was recorded. A boolean status and prompt rule now supply that information. A further live high-reasoning draft call passed in one model call: its context contained the true status without the address, and its next actions did not request the email again.
+
+Reports and screenshots are retained only in the ignored local test-results directory. This change has not been deployed by this verification run. It does not establish scientific completeness, live email delivery, or recovery of the hosted sessions after deployment.
+
 ## Research session controls — 2 November 2026
 
 The session-controls PR passed 1,084 Python tests and 142 Node client tests. Three expected warnings came from invalid class and numeric inputs. These checks cover storage acceptance, session access and deletion, backup restore filtering, handoff expiry and revocation, answer removal and replacement, request retries, preserved submission quotas, source import limits, and free-form compute estimates. They also verify that rejected creation requests store no research content and that leaving a shared session revokes submission tokens.

@@ -12,7 +12,12 @@
       headers: body === undefined ? {} : { "Content-Type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const value = await response.json();
-    if (!response.ok) { const error = new Error(typeof value.detail === "string" ? value.detail : "This action could not finish. Check the current session and retry."); error.status = response.status; throw error; }
+    if (!response.ok) {
+      const error = new Error(typeof value.detail === "string" ? value.detail : "This action could not finish. Check the current session and retry."); error.status = response.status;
+      // The main chat checks account status without exposing private project IDs.
+      if ([401, 403, 404].includes(response.status)) notify("refresh");
+      throw error;
+    }
     return value;
   }
   function notice(text, error = false) { $("workspace-status").textContent = text; $("workspace-status").className = error ? "workspace-status error" : "workspace-status"; }

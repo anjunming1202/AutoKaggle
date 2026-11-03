@@ -166,6 +166,16 @@ To remove scope acceptance, send `field`, `request_id`, and `remove: true`. The 
 
 Scope changes require rebuilt packages and review links. Validated organizer settings and technical checks cannot be resolved through this endpoint. Account ownership and the existing conversation write lock apply.
 
+### Checkpoint and interrupted-response recovery
+
+`POST /api/projects/{id}/conversation/skip` also accepts an active scope checkpoint. This is the explicit Leave open and continue action. It defers only the selected requirement, keeps its question count, and leaves readiness incomplete. The existing `request_id` replay rules apply.
+
+`GET /api/projects/{id}/conversation` reports working while the project lock is held. When the lock is free, a saved in-flight or working flag is recovered as an interrupted response. A pending answer can then use the existing retry endpoint. A GET recovery does not call the model.
+
+Private project endpoints still return 404 for unauthorized or unknown IDs. Clients can check `GET /api/access` separately: `auth_kind: anonymous` requires sign-in; an authenticated account must not treat an unavailable project as an expired session. See [the recovery contract](INTERVIEW_RECOVERY.md).
+
+Required setting checkpoints use validated chat choices, such as `Competition: code`, `Competition: prediction`, and `Daily submissions: 5`, through the normal messages endpoint. They cannot use scope acceptance or exceptions. The conversation view declares Problem, Method and deployment, Baseline, and Setup sections. An active checkpoint identifies its checklist item and current section. Model context includes only a boolean confirming whether the private organizer contact is recorded; it does not include the address.
+
 
 ## Session collaboration and data controls
 

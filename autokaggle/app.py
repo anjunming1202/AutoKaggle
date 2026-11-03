@@ -502,7 +502,16 @@ def create_app(data_dir: Path | None = None):
     @app.get("/api/projects/{project_id}/conversation")
     def read_conversation(project_id: str, request: Request):
         item = get(project_id, request)
-        return conversation_output(item, store.lock(project_id).locked())
+        lock = store.lock(project_id)
+        if not lock.acquire(blocking=False):
+            return conversation_output(item, working=True)
+        try:
+            item = get(project_id, request)
+            if conversation.recover_interrupted(item):
+                store.save(item)
+            return conversation_output(item)
+        finally:
+            lock.release()
 
     def change_conversation(project_id, request, operation, *args):
         with editing(project_id, request) as item:
