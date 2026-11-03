@@ -98,7 +98,7 @@
     updateWorkflowControls(); updateDataControls(); renderContact(); renderReviewControls(); updateBypassControls();
     renderError();
     for (const control of document.querySelectorAll("[data-edit-answer]")) control.disabled = busy || !ready || uncertain;
-    if (window.dispatchEvent && typeof CustomEvent === "function") window.dispatchEvent(new CustomEvent("autokaggle:state", { detail: { projectId: state.projectId, conversation: state.conversation, busy: working(), canCreate: state.config?.can_create_projects !== false } }));
+    if (window.dispatchEvent && typeof CustomEvent === "function") window.dispatchEvent(new CustomEvent("autokaggle:state", { detail: { projectId: state.projectId, conversation: state.conversation, busy: working(), canCreate: state.config?.can_create_projects !== false, authKind: state.config?.auth_kind, researcherName: state.config?.researcher_name } }));
   }
   function showError(text, heading = "Something needs attention") { state.localError = { text, heading }; state.dismissedError = null; renderError(); }
   function renderError() {

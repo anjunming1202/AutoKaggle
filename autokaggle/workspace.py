@@ -336,9 +336,9 @@ def register(app, store, access, get, editing, conversation_output):
         get(project_id, request)
         own = store.owns(project_id, access.owner(request))
         with store.connection() as con:
-            rows = con.execute("SELECT id,joined,member=? FROM collaborators WHERE project=? ORDER BY joined",
+            rows = con.execute("SELECT c.id,c.joined,c.member=?,COALESCE(r.name,'') FROM collaborators c LEFT JOIN researcher_profiles r ON r.account=c.member WHERE c.project=? ORDER BY c.joined",
                                (access.owner(request), project_id)).fetchall()
-        return {"can_manage": own, "members": [{"id": r[0], "joined_at": r[1], "is_you": bool(r[2])} for r in rows]}
+        return {"can_manage": own, "members": [{"id": r[0], "joined_at": r[1], "is_you": bool(r[2]), "name": r[3]} for r in rows]}
 
     @app.post("/api/projects/{project_id}/handoff")
     def issue_handoff(project_id: str, request: Request):

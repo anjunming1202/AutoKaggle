@@ -1,5 +1,13 @@
 # Validation
 
+## Researcher names — 3 November 2026
+
+The name feature passed 1,147 Python tests and 171 Node client tests. Three expected warnings came from invalid prediction classes and numeric overflow. New checks cover existing account migration, Unicode names, duplicate names, sign-out and sign-in, stale forms after account changes, CSRF protection, admin access, search across all project pages, collaborator labels, and exclusion of profile names from participant packages. Naming an account leaves its saved scientific records unchanged.
+
+Live OpenRouter validation used `openai/gpt-6.1-sol` with medium reasoning. Two real model calls passed: one organizer reply and one collaborator reply. The check also confirmed named message authors, shared member names, admin search and correction, access rejection for another researcher, and stable account identity after sign-in. Profile names were absent from the model input. Run `python -m autokaggle.scripts.live_researcher_names_verify` to repeat this check with the private root `.env` file.
+
+Browser checks used a temporary local store at 1280 × 720 with captured local mail. They covered the first name prompt, return to the same challenge, Profile editing from Sessions, admin name search, admin correction, and return from Profile to the same selected admin project. No browser warnings or errors were observed. Screenshots and reports stay in the ignored test-results directory. This run did not test live Gmail delivery, small-screen layout, or a production deployment. Production researcher profiles were not changed.
+
 ## PR #3 merge checks — 3 November 2026
 
 The PR #3 integration with current main passed 1,125 Python tests and 157 Node client tests. Three expected warnings came from invalid prediction classes and numeric overflow. The tests cover setting choices at checkpoints, rejection of unrelated setting choices, retry identity, storage acceptance, answer reassessment, and expired sign-in with the session dialogs.

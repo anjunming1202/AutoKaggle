@@ -36,6 +36,8 @@ Use Sessions to resume or delete a session, share a single-use handoff code, rev
 
 The hosted service uses email codes and private account workspaces. New challenges use the signed-in address as the private organizer contact.
 
+After email verification, a researcher with no saved name is asked for a name once. **Sessions → Profile** lets them edit it later. Session lists, shared-session members, and new message labels show names. Internal review can search all projects by researcher name and can label an existing verified account through **Project details → Researcher name**. Names are account labels; email verification and the existing account ID determine access.
+
 ## Delivered scope and limits
 
 - CSV classification and regression workflows support data checks, draft packages, and prediction submissions. CSV uploads are limited to 200 MB, with additional row, column, and cell bounds.

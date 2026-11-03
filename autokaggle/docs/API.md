@@ -180,3 +180,18 @@ Required setting checkpoints use validated chat choices, such as `Competition: c
 ## Session collaboration and data controls
 
 See [the workspace API](WORKSPACE.md#api-additions) for source import, explicit storage acceptance, session and dataset erasure, answer replacement, handoff codes, and revision after measured attempts. Research writes require the current storage notice (428 until accepted). The existing authorization, project locks, quotas, and retry identities remain in force.
+
+## Researcher account names
+
+Names are account display labels. Existing verified email sessions and account IDs control access. The name routes do not edit scientific records or access grants.
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /api/access/profile` | Get the signed-in account's `name`, `account_id`, and `is_admin` status. Requires verified email sign-in. |
+| `PATCH /api/access/profile` | Set the signed-in account's name with `{"name": "Antonio", "account_id": "ACCOUNT_FROM_PROFILE"}`. |
+| `PATCH /api/access/researcher-profiles/{project_id}` | Admin: set the name of the verified account that owns the given project. Uses `{"name": "Antonio"}`. |
+| `GET /api/internal/projects?q=Antonio` | Admin: search researcher names, project titles, and IDs across all pages. Existing `limit` and `offset` parameters apply. |
+
+Both PATCH routes require a fresh CSRF token from `GET /api/access`, the matching cookie, and the same-origin request header. Name input accepts 1–100 Unicode characters after normalization and whitespace cleanup. Control characters are rejected. Duplicate names are allowed. The self-update account ID must match the current signed-in account. A switched account receives 409 and must reload the form. Extra fields cannot select another account. Admin updates require a verified account behind the target project; legacy non-email owners receive 422.
+
+Email verification returns `profile_required: true` when a name has not been saved. The browser then opens `/profile` and preserves the safe workspace destination in `next`. Returning named accounts continue directly. Existing API clients and already-open sessions can keep working. `GET /api/config` exposes only the signed-in user's name. Session lists add `researcher_name`; shared members add `name`. Internal detail adds `researcher` with `name` and `can_edit`.
