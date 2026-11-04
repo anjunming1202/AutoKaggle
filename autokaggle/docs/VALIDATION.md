@@ -1,5 +1,13 @@
 # Validation
 
+## Thirty model requests per round — 3 November 2026
+
+The interview and revision limit is now 30 model requests per round. Failed requests and automatic response repairs count toward that limit. The eight-follow-up checkpoint and lifetime call accounting remain in place. Limit messages use the configured constant. The separate legacy workbench advice limit remains 12 requests per project.
+
+Validation passed 1,135 Python tests, 157 Node client tests, and the English source check. Boundary tests cover requests 13 and 30, exhausted retries, use of the final request for repair, and continuation with a fresh round. Two live OpenRouter calls used `openai/gpt-6.1-sol` with medium reasoning. Requests 13 and 30 processed the correction and preserved independent facts. A subsequent answer made no model call, stayed saved for review, and produced the 30-call limit notice. The prior request count was seeded in temporary fixtures; the live check made two actual requests. Reports stay in the ignored test-results directory. This local verification did not deploy the change.
+
+The change was then deployed to the AutoKaggle Civo service as source `1218337455b67b9a1d759f2e3c119d991facef146f25988742f563caf77944e8`. The rollout and SQLite backup integrity checks passed. All 27 project records match their pre-release hashes, and the service retains 14 email accounts. The running conversation API reports 30. HTTPS health and login checks passed, anonymous Internal access was denied, and email login remained configured. One further live OpenRouter call ran in the deployed container with a temporary in-memory fixture whose counter was seeded at 29. Request 30 completed, and the next answer stopped without another model call and remained saved in that fixture. No production project was written by this model check. See the deployment record in `autokaggle/deploy/WEB.md`.
+
 ## PR #12 and PR #9 merge checks — 3 November 2026
 
 The combined changes passed 1,133 Python tests, 157 Node client tests, and the new English source check. Three expected warnings came from invalid prediction classes and numeric overflow.

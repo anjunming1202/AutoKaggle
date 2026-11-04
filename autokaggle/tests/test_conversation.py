@@ -834,19 +834,19 @@ def test_failure_then_draft_keeps_unprocessed_initial_brief(monkeypatch, project
     assert any(message["content"] == text for message in state["messages"])
 
 
-def test_budget_is_reserved_before_call_and_no_automatic_twelfth_retry(monkeypatch, project):
-    project["_model_calls"] = 11
+def test_budget_is_reserved_before_call_and_no_automatic_retry_after_final_call(monkeypatch, project):
+    project["_model_calls"] = c.MAX_CALLS - 1
     snapshots = []
-    calls = provider(monkeypatch, [RuntimeError("timeout")], reserve_check=lambda: snapshots and snapshots[-1]["_model_calls"] == 12 or pytest.fail("Call not reserved"))
+    calls = provider(monkeypatch, [RuntimeError("timeout")], reserve_check=lambda: snapshots and snapshots[-1]["_model_calls"] == c.MAX_CALLS or pytest.fail("Call not reserved"))
     c.submit_message(project, "Our research has a distinct goal", "first", reserve=lambda p: snapshots.append(copy.deepcopy(p)))
     assert snapshots[-1]["conversation"]["_inflight"]
     assert len(users(snapshots[-1]["conversation"])) == 1
     assert not c.ensure_conversation(project)["can_retry"]
-    with pytest.raises(ValueError, match="12-call"):
+    with pytest.raises(ValueError, match=f"{c.MAX_CALLS}-call"):
         c.retry_turn(project, "retry")
     c.make_readme(project, "draft")
     state = c.ensure_conversation(project)
-    assert len(calls) == 1 and project["_model_calls"] == 12
+    assert len(calls) == 1 and project["_model_calls"] == c.MAX_CALLS
     assert state["readme"] and "Our research has a distinct goal" in state["readme"]
     assert not state["can_retry"]
 
@@ -1293,13 +1293,13 @@ def test_revision_preserves_all_context_but_sends_no_private_metadata(monkeypatc
 
 def test_revision_has_new_budget_but_preserves_total_accounting(monkeypatch, project):
     state = revision_project(project)
-    project['_model_calls'] = 12
+    project['_model_calls'] = c.MAX_CALLS
     c.begin_revision(project, 'start')
     snapshots = []
     calls = provider(monkeypatch, [scope([], 'difficulty', 'Which baseline source should we use?')])
     c.submit_message(project, 'The baseline reference needs to change.', 'change', reserve=lambda value: snapshots.append(copy.deepcopy(value)))
-    assert len(calls) == 1 and project['_model_calls'] == 13
-    assert snapshots[0]['_model_calls'] == 13
+    assert len(calls) == 1 and project['_model_calls'] == c.MAX_CALLS + 1
+    assert snapshots[0]['_model_calls'] == c.MAX_CALLS + 1
     assert snapshots[0]['conversation']['_revision_rounds'][0]['model_calls'] == 1
     assert state['status'] == 'idle'
     assert c.conversation_view(project)['review']['model_calls'] == 1
@@ -1307,7 +1307,7 @@ def test_revision_has_new_budget_but_preserves_total_accounting(monkeypatch, pro
 
 def test_revision_retry_uses_round_budget_and_preserves_one_request(monkeypatch, project):
     state = revision_project(project)
-    project['_model_calls'] = 12
+    project['_model_calls'] = c.MAX_CALLS
     c.begin_revision(project, 'start')
     calls = provider(monkeypatch, [RuntimeError('provider timeout'), scope([], 'difficulty', 'Which source should we use?')])
     c.submit_message(project, 'Change the reference.', 'change')
@@ -1315,14 +1315,14 @@ def test_revision_retry_uses_round_budget_and_preserves_one_request(monkeypatch,
     c.retry_turn(project, 'retry')
     assert state['status'] == 'idle' and len(calls) == 2
     assert len(c.conversation_view(project)['review']['requested_changes']) == 1
-    assert project['_model_calls'] == 14
+    assert project['_model_calls'] == c.MAX_CALLS + 2
 
 
 def test_revision_budget_exhaustion_keeps_unprocessed_feedback(project, monkeypatch):
     state = revision_project(project)
     c.begin_revision(project, 'start')
-    state['_revision_rounds'][0]['model_calls'] = 12
-    project['_model_calls'] = 24
+    state['_revision_rounds'][0]['model_calls'] = c.MAX_CALLS
+    project['_model_calls'] = 2 * c.MAX_CALLS
     calls = provider(monkeypatch, [])
     c.submit_message(project, 'Change the baseline to the new reference.', 'change')
     assert not calls and state['phase'] == 'draft'
@@ -1538,14 +1538,14 @@ def test_invalid_recorded_requirement_is_open_in_public_view(project):
 def test_continue_interview_is_idempotent_and_resets_round_budget(monkeypatch, project):
     c.submit_message(project, "Study planetary stability.", "first")
     c.make_readme(project, "checkpoint")
-    project["_model_calls"] = 12
+    project["_model_calls"] = c.MAX_CALLS
     before = copy.deepcopy(project["conversation"]["messages"])
     snapshots = []
     c.continue_interview(project, "continue-round", reserve=lambda value: snapshots.append(copy.deepcopy(value)))
     state = project["conversation"]
     assert state["messages"][:len(before)] == before
     assert state["_interview_round"] == 2
-    assert state["_interview_call_start"] == 12
+    assert state["_interview_call_start"] == c.MAX_CALLS
     assert state["followups"] == 1
     assert c._call_count(project) == 0
     saved = copy.deepcopy(state)
@@ -1554,7 +1554,7 @@ def test_continue_interview_is_idempotent_and_resets_round_budget(monkeypatch, p
     assert snapshots[-1]["conversation"] == state
     provider(monkeypatch, [scope([], "task", "What output should an attempt produce?", requirements=[])])
     c.submit_message(project, "We mean compact systems of three planets.", "continued-answer")
-    assert project["_model_calls"] == 13 and c._call_count(project) == 1
+    assert project["_model_calls"] == c.MAX_CALLS + 1 and c._call_count(project) == 1
     with pytest.raises(ValueError, match="different action"):
         c.make_readme(project, "continue-round")
 

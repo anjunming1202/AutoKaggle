@@ -58,7 +58,7 @@ PARTIAL_QUESTIONS = {
     "support": "Which deadline should participants work toward?",
 }
 MAX_FOLLOWUPS = 8
-MAX_CALLS = 12
+MAX_CALLS = 30
 MAX_REVISION_ROUNDS = 20
 
 
@@ -692,7 +692,7 @@ def _platform_context(project):
 def _provider(project, kind, context, reserve):
     state = ensure_conversation(project)
     if _call_count(project) >= MAX_CALLS:
-        raise ValueError("The 12-call model limit has been reached.")
+        raise ValueError(f"The {MAX_CALLS}-call model limit has been reached.")
     project["_model_calls"] = project.get("_model_calls", 0) + 1
     revision = _revision(state)
     if revision:
@@ -1469,7 +1469,7 @@ def _draft(project, reserve):
         state["_pending"] = None
         if _revision(state):
             _revision(state)["status"] = "draft_ready"
-        _message(state, "assistant", ("The 12-call model limit was reached. " if budget else "Rules mode: ") + "The draft README contains your recorded answers and open items. You can review it and send corrections.")
+        _message(state, "assistant", (f"The {MAX_CALLS}-call model limit was reached. " if budget else "Rules mode: ") + "The draft README contains your recorded answers and open items. You can review it and send corrections.")
         return
     try:
         public_items = {key: value for key, value in state["items"].items() if key != "organizer"}
@@ -1951,7 +1951,7 @@ def retry_turn(project, request_id, reserve=None):
         _request(state, request_id, "retry")
         return
     if _call_count(project) >= MAX_CALLS:
-        raise ValueError("The 12-call model limit has been reached. Create a draft from the saved answers.")
+        raise ValueError(f"The {MAX_CALLS}-call model limit has been reached. Create a draft from the saved answers.")
     if state["status"] != "error" or not state["can_retry"] or not state.get("_pending"):
         raise ValueError("There is no failed response to retry.")
     if not _request(state, request_id, "retry"):

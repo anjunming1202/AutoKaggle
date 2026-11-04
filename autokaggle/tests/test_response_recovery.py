@@ -121,23 +121,34 @@ def test_provider_failures_do_not_trigger_semantic_repair(monkeypatch, project, 
     assert "private provider detail" not in json.dumps(project)
 
 
+@pytest.mark.parametrize("previous_calls", [12, 29])
+def test_interview_accepts_requests_through_the_thirtieth_call(monkeypatch, project, previous_calls):
+    project["_model_calls"] = previous_calls
+    calls = provider(monkeypatch, [good_scope()])
+    c.submit_message(project, "Predict stability.", "within-expanded-budget")
+    assert len(calls) == 1
+    assert project["_model_calls"] == previous_calls + 1
+    assert project["conversation"]["status"] == "idle"
+    assert c.conversation_view(project)["interview"]["model_call_limit"] == 30
+
+
 def test_final_call_cannot_trigger_an_automatic_repair(monkeypatch, project):
-    project["_model_calls"] = 11
+    project["_model_calls"] = c.MAX_CALLS - 1
     calls = provider(monkeypatch, ["not JSON"])
     c.submit_message(project, "Predict stability.", "first")
     state = project["conversation"]
-    assert len(calls) == 1 and project["_model_calls"] == 12
+    assert len(calls) == 1 and project["_model_calls"] == c.MAX_CALLS
     assert not state["can_retry"] and state["error_code"] == "invalid_json_response"
     assert state["items"]["question"]["value"] == ""
-    with pytest.raises(ValueError, match="12-call"):
+    with pytest.raises(ValueError, match=f"{c.MAX_CALLS}-call"):
         c.retry_turn(project, "retry")
 
 
 def test_repair_can_use_final_available_call(monkeypatch, project):
-    project["_model_calls"] = 10
+    project["_model_calls"] = c.MAX_CALLS - 2
     calls = provider(monkeypatch, ["not JSON", good_scope()])
     c.submit_message(project, "Predict stability.", "first")
-    assert len(calls) == 2 and project["_model_calls"] == 12
+    assert len(calls) == 2 and project["_model_calls"] == c.MAX_CALLS
     assert project["conversation"]["status"] == "idle"
 
 

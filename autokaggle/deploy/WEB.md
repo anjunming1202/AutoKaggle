@@ -227,3 +227,23 @@ release test; its shared mail transport and invitation rules have automated
 coverage. Existing administrator-owned drafts remain separate from email
 accounts. Use the earlier web record (local operational record; not included in this repository) for the website,
 package, and prediction submission checks.
+
+
+## Interview request limit — 3 November 2026
+
+The private service now permits 30 model requests per interview and revision
+round. Retries and automatic repairs count toward the allowance. The existing
+eight-follow-up checkpoint remains separate. A researcher who reached the old
+limit can refresh the page and use **Continue interview** from the working draft.
+
+Source-only release `1218337455b67b9a1d759f2e3c119d991facef146f25988742f563caf77944e8` includes the merged PR #9 correction
+checks and the local 30-request change. The workload is Ready. The verified
+backup is `/data/backups/pre-interview-30-20261103T192421Z.sqlite3`. All 27 saved project records match
+their pre-release hashes, and all 14 email accounts remain. The running module
+and conversation API both report a limit of 30. HTTPS health and login checks
+passed; anonymous Internal access remains denied and email login is configured.
+
+The immutable source receipt is retained in the ignored local directory
+`autokaggle/test-results/interview-30-release`. The previous source ConfigMap
+`source-328efb55f2d1c054` is retained for rollback. Configuration, Secrets, and
+the data volume were retained.
