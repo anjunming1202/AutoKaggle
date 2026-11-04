@@ -119,3 +119,16 @@ Deployment receipts, screenshots, temporary project records, and uploaded datase
 ## Limits
 
 The current trial validates the submission and scoring pipeline with a simple predictor. It does not reproduce a scientific reference baseline. Dataset links are not automatically imported. Hosted code execution, the requested public/private leaderboard workflow, and public competition launch remain outside the delivered hosted flow. See the [current implementation](../README.md) and [future work](FUTURE_BACKEND.md).
+
+## Environment evaluation — 4 November 2026
+
+Tested in an isolated checkout and temporary stores. Not deployed.
+
+- Live model: OpenRouter `openai/gpt-6.1-sol`, medium reasoning. A researcher answer that names a checkpoint, a GitHub repository, and held-out seeds selected the environment format. The next question did not ask for a CSV, target column, or row split. Script: `autokaggle/scripts/live_environment_verify.py`.
+- Live GitHub: the NLE repository was pinned to one commit. A repository without the manifest was refused and did not use the allowance.
+- Package: the shipped harness ran the shipped example policy as a real process against a toy environment.
+- Manual approval: a complete environment draft waited for approval with no review email or link. The local browser check approved a synthetic draft in Internal, after which a test double received the organizer email. A repeat approval was refused.
+- Private repositories: automated tests cover the service credential, including that a redirect to another host never receives it and that source imports never use it. A missing repository on live GitHub returned the access message and used no allowance. No credential exists yet, so a private repository was not read from real GitHub.
+- Upgrade: synthetic records written by the deployed source were read by the new source and then by the deployed source again. Only a record marked as replying changed at startup, which is the existing interruption recovery. The built draft showed as out of date until rebuilt, as designed for a generator change. An environment challenge stayed readable after rollback, and its rebuild reported needs_changes.
+- Browser: format selection, seed form, range error, commit pin, draft build, website, repository submission errors, and submission token, on a local server.
+- Not tested: the NLE environment was not run. No GPU evaluation was run. The successful manifest read was simulated because no public repository has the manifest yet. Results were recorded from synthetic episodes. Review email used a test double. The hosted service was not changed.

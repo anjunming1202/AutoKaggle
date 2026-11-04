@@ -104,7 +104,7 @@ def mark_validation(project, previous_id, status, attempt, code=None):
 def project_detail(item):
     allowed = ("id", "title", "brief", "created_at", "updated_at", "status", "revision", "answers",
                "design", "dataset", "analysis", "advice", "events", "harness", "prepared", "notices",
-               "conversation", "setup", "workflow", "_model_calls", "_model_traces")
+               "conversation", "setup", "workflow", "_environment_approval", "_model_calls", "_model_traces")
     return scrub({key: item[key] for key in allowed if key in item})
 
 
@@ -146,9 +146,9 @@ def register(app, access, store, static_dir):
         # Do not deserialize every project's full model input/output on a list request.
         with store.connection() as con:
             total = con.execute("SELECT count(*) FROM projects").fetchone()[0]
-            rows = con.execute("SELECT id, updated_at, json_extract(body, '$.title'), json_extract(body, '$.status'), json_extract(body, '$._model_calls'), json_extract(body, '$.conversation.status') FROM projects ORDER BY updated_at DESC, id LIMIT ? OFFSET ?", (limit, offset)).fetchall()
+            rows = con.execute("SELECT id, updated_at, json_extract(body, '$.title'), json_extract(body, '$.status'), json_extract(body, '$._model_calls'), json_extract(body, '$.conversation.status'), json_extract(body, '$.workflow.status') FROM projects ORDER BY updated_at DESC, id LIMIT ? OFFSET ?", (limit, offset)).fetchall()
         return {"total": total, "limit": limit, "offset": offset, "projects": [
-            {"id": r[0], "updated_at": r[1], "title": scrub(r[2]), "status": r[3], "model_calls": r[4] or 0, "conversation_status": r[5]}
+            {"id": r[0], "updated_at": r[1], "title": scrub(r[2]), "status": r[3], "model_calls": r[4] or 0, "conversation_status": r[5], "workflow_status": r[6]}
             for r in rows]}
 
     @app.get("/api/internal/projects/{project_id}")

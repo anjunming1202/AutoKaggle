@@ -53,6 +53,27 @@
     }
     submit.addEventListener("click", async () => {
       const codeMode = container.dataset.type === "code";
+      if (container.dataset.type === "environment") {
+        const repository_url = document.getElementById("repository-url").value.trim();
+        const ref = document.getElementById("repository-ref").value.trim();
+        if (!repository_url) { result.textContent = "Enter a GitHub repository first."; return; }
+        submit.disabled = true; result.textContent = "Freezing the commit and checking its manifest…";
+        try {
+          const key = storageKey();
+          const fingerprint = repository_url + "\n" + ref;
+          const prior = savedAttempt(key);
+          const request_id = prior?.fingerprint === fingerprint ? prior.id : crypto.randomUUID();
+          rememberAttempt(key, {fingerprint, id: request_id});
+          const response = await fetch(`/api/projects/${container.dataset.project}/workflow/repository-submissions`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({request_id, repository_url, ref})});
+          const data = await response.json();
+          if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Submission failed.");
+          result.textContent = data.status === "scored"
+            ? `${data.metric}: ${data.score}. Success rate ${data.success_rate} over ${data.episodes} seeds. ${data.detail}`
+            : `Frozen at ${data.commit.slice(0, 12)}. ${data.remaining_today} submissions remain today. ${data.detail}`;
+          if (newAttempt) newAttempt.hidden = false;
+        } catch (error) { result.textContent = error.message; } finally { submit.disabled = false; }
+        return;
+      }
       const file = document.getElementById("prediction-file").files[0];
       if (!file) { result.textContent = codeMode ? "Choose a Python file first." : "Choose a prediction CSV first."; return; }
       if (file.size > (codeMode ? 262144 : 5000000)) { result.textContent = codeMode ? "Python files must be at most 256 KiB." : "Prediction files must be at most 5 MB."; return; }

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import csv
+from datetime import datetime, timezone
 import hashlib
 import importlib.metadata
 import json
@@ -16,7 +17,7 @@ import zipfile
 
 import pandas as pd
 
-from . import conversation, onboarding_setup
+from . import conversation, environments, onboarding_setup
 from .core.datasets import analyze_dataset, write_partitions, _split_indices, _load_csv
 from .exports import EVALUATE
 from .policy import brief_checks, summarize
@@ -72,12 +73,17 @@ if __name__ == "__main__":
     inputs = p.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--predictions", type=Path)
     inputs.add_argument("--code", type=Path, help="One Python source file for a code competition")
+    inputs.add_argument("--repository", help="GitHub repository for an environment competition")
+    p.add_argument("--ref", default="", help="Branch, tag, or commit. Defaults to the default branch.")
     p.add_argument("--request-id", default=None, help="Reuse this ID when retrying the same upload")
     a = p.parse_args()
     request_id = a.request_id or str(uuid.uuid4())
     print("Request ID:", request_id)
-    field, path = ("source_code", a.code) if a.code else ("predictions_csv", a.predictions)
-    body = json.dumps({"request_id": request_id, field: path.read_text()}).encode()
+    if a.repository:
+        body = json.dumps({"request_id": request_id, "repository_url": a.repository, "ref": a.ref}).encode()
+    else:
+        field, path = ("source_code", a.code) if a.code else ("predictions_csv", a.predictions)
+        body = json.dumps({"request_id": request_id, field: path.read_text()}).encode()
     token = os.environ.get("AUTOKAGGLE_SUBMISSION_TOKEN", "")
     if not token:
         p.error("Set AUTOKAGGLE_SUBMISSION_TOKEN to the submission-only token from the organizer. Never use an organizer login cookie.")
@@ -94,7 +100,7 @@ def _json(value):
 def generator_hash():
     digest = hashlib.sha256()
     root = Path(__file__).parent
-    for name in ("workflow.py", "readiness.py", "conversation.py", "scope_exports.py", "site_template.py", "static/bold-butterfly.svg", "exports.py", "core/datasets.py",
+    for name in ("workflow.py", "readiness.py", "conversation.py", "scope_exports.py", "site_template.py", "static/bold-butterfly.svg", "exports.py", "core/datasets.py", "environments.py", "environment_harness.py",
                  "runner/civo.py", "runner/controller.py", "runner/entrypoint.py"):
         source = root / name
         digest.update(name.encode() + b"\0")
@@ -106,9 +112,37 @@ def fingerprint(project):
     state = conversation.ensure_conversation(project)
     body = {"title": project["title"], "brief": project["brief"], "revision": project["revision"],
             "design": project["design"], "answers": project["answers"],
-            "setup": onboarding_setup.get(project), "items": state["items"], "readiness": conversation.conversation_view(project)["readiness"],
+            "setup": onboarding_setup.get(project), "environment": project.get("environment"), "items": state["items"], "readiness": conversation.conversation_view(project)["readiness"],
             "readme": state.get("readme"), "references": reference_receipts(project), "generator": generator_hash()}
     return hashlib.sha256(_json(body).encode()).hexdigest()
+
+
+APPROVAL_NEEDED = "An administrator must approve this environment challenge before the review email is sent."
+
+
+def approve_environment(project, approver, note=""):
+    """Record approval for this exact draft. Any later change to the draft clears it."""
+    if view(project)["status"] != "awaiting_approval":
+        raise ValueError("Only a current draft that is waiting for approval can be approved.")
+    project["_environment_approval"] = {"fingerprint": fingerprint(project), "version": project["workflow"]["version"], "approved_by": approver,
+                                       "approved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "note": note}
+    for item in project["workflow"]["checks"]:
+        if item["id"] == "environment_approval":
+            item.update(status="pass", detail=_approval_detail(project["_environment_approval"]))
+    project["workflow"]["status"] = "ready_for_review"
+
+
+def _approval_detail(approval):
+    return f"An administrator approved this draft on {approval['approved_at'][:10]}. Approval does not mean the challenge environment ran on this service."
+
+
+def _status(checks):
+    open_checks = [c for c in checks if c["blocking"] and c["status"] != "pass"]
+    if not open_checks:
+        return "ready_for_review"
+    if any(c["status"] == "blocked" for c in checks):
+        return "needs_changes"
+    return "awaiting_approval" if [c["id"] for c in open_checks] == ["environment_approval"] else "draft"
 
 
 def view(project):
@@ -223,7 +257,10 @@ def build(project, directory: Path):
     def check(key, passed, label, detail, pending=False, blocking=True):
         checks.append({"id": key, "status": "pass" if passed else "pending" if pending else "blocked", "label": label, "detail": detail, "blocking": blocking})
 
-    check("format", settings["competition_type"] in {"prediction", "code"}, "Competition type", settings["competition_type"] or "Select prediction or code submissions.")
+    environment_mode = settings["competition_type"] == "environment"
+    environment_config = project.get("environment") if environment_mode else None
+    seeds = environments.evaluation_seeds(project, environment_config) if environment_config else None
+    check("format", settings["competition_type"] in {"prediction", "code", "environment"}, "Competition type", settings["competition_type"] or "Select prediction, code, or environment submissions.")
     check("quota", settings["submissions_confirmed"], "Submission allowance", f"{settings['daily_submission_limit']} submissions per team per UTC day. " + ("Confirmed." if settings["submissions_confirmed"] else "Confirm this setting in the checklist."))
     check("contact", bool(settings["organizer_email"]), "Organizer contact", "Private contact recorded." if settings["organizer_email"] else "Add an organizer email in the checklist.")
     readiness = _public_readiness(project)
@@ -269,13 +306,35 @@ def build(project, directory: Path):
         spec["execution"]["resources"] = {"cpu": 1, "memory_mib": 512, "seconds": 100, "cpu_seconds": 90,
             "job_deadline_seconds": 120, "gpu": 0}
         spec["execution"]["resource_status"] = "Fixed worker limits: 100 seconds for the program, 90 CPU seconds, and a 120-second Job deadline. Staging and collection are separate."
+    if environment_mode:
+        config = environment_config or {}
+        spec.update(task="environment", target="",
+            metric={"name": config.get("primary_metric") or "success_rate", "version": environments.harness.METRIC_VERSION, "direction": "maximize", "reported": list(environments.METRICS)},
+            split=environments.public_seed_policy(config, seeds) if config else {"unit": "seed", "method": "reserved_seed_range", "rules": environments.SEED_RULES},
+            access={"evaluation_seeds": "private", "public_seeds": "smoke tests only", "publication": "draft"},
+            environment={"source": config.get("env_repository"), "commit": config.get("env_commit"), "factory": config.get("env_factory"), "license": config.get("env_license"),
+                         "private": bool(config.get("env_private")), "protocol": environments.harness.PROTOCOL, "max_episode_steps": config.get("max_episode_steps"), "reference_tools": runtime},
+            submission={"kind": "github_repository", "manifest": environments.MANIFEST, "manifest_format": environments.MANIFEST_FORMAT,
+                        "pinning": "One commit is frozen when the submission is received.", "episode_columns": environments.harness.EPISODE_COLUMNS})
+        spec["execution"] = {"status": "not_enabled", "network": "disabled for submitted code", "seeds_available_to_policy": False,
+                             "resources": {"seconds": int(config["evaluation_hours"] * 3600) if config.get("evaluation_hours") else None},
+                             "resource_status": environments.EXECUTION_NOTICE + " See the recorded plan for the intended hardware."}
     temp = Path(tempfile.mkdtemp(prefix="workflow-", dir=directory))
     os.chmod(temp, 0o700)
     try:
         public, private = temp / "researcher", temp / "private"
         public.mkdir(); private.mkdir(mode=0o700)
         baseline = None
-        if project.get("dataset"):
+        if environment_mode:
+            check("environment_source", bool(config), "Environment and seed policy",
+                  f"Environment pinned at {config['env_commit'][:12]}. {config['development_seeds']} development and {config['final_seeds']} final seeds from the reserved range."
+                  + (" This repository is private, so participants need access from the organizer." if config.get("env_private") else "") if config
+                  else "Set the environment repository and seed policy in Data and baseline checks.", pending=True)
+            baseline = environments.mechanism_test()
+            check("scorer", True, "Scorer check", "Known episode results scored as expected, and results for the wrong seeds were rejected.")
+            check("baseline", True, "Submission pipeline test", f"A constant policy scored {baseline['metric']}: {baseline['score']:.6g} on {baseline['rows']} seeds in a built-in test environment. This tests the seed, protocol, and scoring path. It did not run this challenge's environment or a submission.")
+            check("environment_execution", False, "Challenge environment run", environments.EXECUTION_NOTICE, pending=True, blocking=False)
+        elif project.get("dataset"):
             audit = analyze_dataset(directory / "dataset.csv", project["design"], project["answers"], project["_seed"])
             # A sound CSV split does not establish private labels or permission.
             declarations = [c for c in brief_checks(project) if c["id"] in {"public_labels", "provenance", "rights", "synthetic"}]
@@ -357,9 +416,12 @@ def build(project, directory: Path):
         code_mode = settings["competition_type"] == "code"
         sample_input = "example_inputs.csv" if code_mode else "validation_features.csv"
         submission_option = "--code baseline.py" if code_mode else "--predictions predictions.csv"
+        environment_help = f"Read challenge.json for the seed policy, environment, and submission contract. Implement the policy protocol in example_policy.py, and add {environments.MANIFEST} to your repository root; autokaggle-submission.example.json shows its fields. Test locally with `python environment_harness.py run --env-factory MODULE:FUNCTION --seeds SMOKE_SEEDS -- python example_policy.py`. Submit with `python submit.py --url SUBMISSION_URL --repository https://github.com/OWNER/REPOSITORY`. Set AUTOKAGGLE_SUBMISSION_TOKEN to the submission-only token from the organizer. Final scores are withheld. {environments.EXECUTION_NOTICE}"
         package_help = f"Read challenge.json for the contract. Run `python baseline.py --input {sample_input} --output predictions.csv` for a local example. Submit with `python submit.py --url SUBMISSION_URL {submission_option}`. Set AUTOKAGGLE_SUBMISSION_TOKEN to the submission-only token from the organizer preview. Reuse the printed request ID with --request-id when retrying an uncertain upload. Final scores are withheld."
         if code_mode:
             package_help += " The code worker supports the Python standard library only. It supplies training data at /input/train.csv and passes --input and --output paths to the submitted file. Limits are 1 CPU, 512 MiB RAM, 90 CPU seconds, 100 program seconds, and a 120-second Job deadline. Staging and result collection are separate. Package installation and network access are disabled. challenge.json identifies the fixed worker image. scorer-requirements.lock describes the separate local reference scorer; those packages are not installed in the code worker."
+        if environment_mode:
+            package_help = environment_help
         scope_section = "\n\n" + scope_notes if scope_notes and scope_notes not in readme else ""
         package_readme = readme + scope_section + "\n\n" + _readiness_text(readiness) + "\n\n## Preparation results\n\nThe statements above were recorded during onboarding. The preparation checks below were produced when this package was built. Unresolved required decisions prevent review readiness.\n\n" + preparation + "\n\n## Draft package\n\n" + package_help + "\n"
         (public / "README.md").write_text(package_readme)
@@ -383,24 +445,51 @@ Use `python submit.py --url SUBMISSION_URL {submission_option}`. Obtain the deve
 
 Follow the environment and resource limits in challenge.json and requirements.lock. Track compute and model-token costs separately. Do not exceed the recorded budgets. If a required budget or permission is unknown, ask the organizer. Record code and data versions, seeds, dependencies, experiment settings, measured scores, failures, and costs. State which results are local validation or server development results. Return the solution, instructions to run it, and unresolved limitations.
 """
+        if environment_mode:
+            agent_instructions = f"""# BOLD AutoKaggle participant instructions
+
+Read README.md before starting research. Read challenge.json for the version, metric, seed policy, environment, resource limits, and budgets. Report missing requirements or conflicts to the organizer before relying on an assumption.
+
+## Seeds
+
+{environments.SEED_RULES} Do not train on, search for, or infer reserved seeds. Use the published smoke-test seeds only to check that your policy runs.
+
+## Policy protocol
+
+Your policy runs as its own process and reads one JSON message per line from standard input. A `reset` message starts an episode; reply with `{{"ok": true}}`. An `act` message carries an `observation`; reply with `{{"action": ...}}`. Write one JSON reply per line and flush it. Keep logs out of standard output. Your policy never receives a seed.
+
+## Submission
+
+Commit a manifest named {environments.MANIFEST} to the repository root. See autokaggle-submission.example.json. `policy_command` is a list of arguments and never runs through a shell. Pin large checkpoints with `url` and `sha256`. Use `python submit.py --url SUBMISSION_URL --repository https://github.com/OWNER/REPOSITORY` with an optional `--ref`. A private repository must give this service access. Keep the token in AUTOKAGGLE_SUBMISSION_TOKEN, outside source files and logs. Save the printed request ID and reuse it when retrying. Each received submission counts toward the daily allowance.
+
+## Status
+
+{environments.EXECUTION_NOTICE} Keep measured results separate from claims. Report code versions, seeds used in training, dependencies, failures, and costs.
+"""
         if bypassed:
             agent_instructions += "\n" + _bypass_text(readiness) + "\n"
         if scope_notes:
             agent_instructions += "\n" + scope_notes + "\n"
-        if code_mode:
+        if environment_mode:
+            pass
+        elif code_mode:
             agent_instructions += "\nSubmit one Python source file. It must accept --input and --output. The code worker supports the Python standard library only, with no package installation or network access. Local scorer packages are not available in that worker. Use the fixed worker image and limits in challenge.json. Test inputs are supplied by the runner; answer labels stay outside submitted code.\n"
         else:
             agent_instructions += "\nSubmit predictions for every supplied development input ID, with exactly the columns and values required by output_schema.json. The development endpoint accepts development predictions only. Final test inputs may be supplied without labels; this draft does not accept final-score requests.\n"
         (public / "AGENTS.md").write_text(agent_instructions)
         (public / "challenge.json").write_text(_json(spec))
-        (public / "input_schema.json").write_text(_json({"format": "CSV", "id": "_autokaggle_id", "features": [c["name"] for c in (project.get("dataset") or {}).get("columns", []) if c["name"] != spec["target"] and c["name"] not in project["design"]["exclude_columns"]]}))
-        (public / "output_schema.json").write_text(_json({"format": "CSV", "columns": spec["submission"]["columns"], "rules": ["Exactly one prediction per input ID", "Unique nonempty IDs", "No missing predictions", "Finite numeric predictions where required"], "prediction_type": spec["submission"]["prediction_type"]}))
+        if environment_mode:
+            environments.write_package(public, private, spec, config, seeds)
+        (public / "input_schema.json").write_text(_json({"format": "policy protocol", "protocol": environments.harness.PROTOCOL, "messages": ["reset", "act"]}) if environment_mode else _json({"format": "CSV", "id": "_autokaggle_id", "features": [c["name"] for c in (project.get("dataset") or {}).get("columns", []) if c["name"] != spec["target"] and c["name"] not in project["design"]["exclude_columns"]]}))
+        (public / "output_schema.json").write_text(_json({"format": "CSV", "columns": environments.harness.EPISODE_COLUMNS, "rules": ["Exactly one row per evaluation seed", "Unfinished episodes count as unsuccessful"]}) if environment_mode else _json({"format": "CSV", "columns": spec["submission"]["columns"], "rules": ["Exactly one prediction per input ID", "Unique nonempty IDs", "No missing predictions", "Finite numeric predictions where required"], "prediction_type": spec["submission"]["prediction_type"]}))
         reference_requirements = "\n".join(f"{key}=={value}" for key, value in runtime["packages"].items()) + "\n"
-        (public / "requirements.lock").write_text("# The code worker supports the Python standard library only.\n# Use the exact image digest in challenge.json.\n" if settings["competition_type"] == "code" else reference_requirements)
-        (public / "scorer-requirements.lock").write_text(reference_requirements)
-        (public / "baseline.py").write_text(baseline_source(spec))
+        (public / "requirements.lock").write_text("# Each submission declares its own dependencies in its manifest.\n" if environment_mode else "# The code worker supports the Python standard library only.\n# Use the exact image digest in challenge.json.\n" if settings["competition_type"] == "code" else reference_requirements)
+        (public / "scorer-requirements.lock").write_text("# environment_harness.py uses the Python standard library only.\n" if environment_mode else reference_requirements)
+        if not environment_mode:
+            (public / "baseline.py").write_text(baseline_source(spec))
         (public / "submit.py").write_text(SUBMIT)
-        (public / "evaluate.py").write_text(EVALUATE)
+        if not environment_mode:
+            (public / "evaluate.py").write_text(EVALUATE)
         references = reference_receipts(project)
         if references:
             (public / "references.json").write_text(_json({"sources": references,
@@ -428,12 +517,17 @@ Follow the environment and resource limits in challenge.json and requirements.lo
         if final.exists():
             shutil.rmtree(final)
         temp.replace(final)
-        ready = all(c["status"] == "pass" for c in checks if c["blocking"])
+        if environment_mode:
+            # Added after the package and version are fixed. Approval never changes participant files.
+            approval = project.get("_environment_approval") or {}
+            approved = approval.get("fingerprint") == fingerprint(project)
+            check("environment_approval", approved, "Manual approval", _approval_detail(approval) if approved else APPROVAL_NEEDED, pending=True)
+        status = _status(checks)
         previous = project.get("workflow") or {}
         notification = previous.get("notification") if previous.get("version") == version and previous.get("fingerprint") == fingerprint(project) else None
-        project["workflow"] = {"status": "ready_for_review" if ready else "needs_changes" if any(c["status"] == "blocked" for c in checks) else "draft",
+        project["workflow"] = {"status": status,
             "version": version, "checks": checks, "artifacts": [{"name": name, "description": "Included in the research ZIP."} for name in sorted([*manifest, "manifest.json"])],
-            "notification": notification or {"status": "not_ready", "detail": "Email is sent only when the complete draft is ready."},
+            "notification": notification or {"status": "not_ready", "detail": APPROVAL_NEEDED if status == "awaiting_approval" else "Email is sent only when the complete draft is ready."},
             "review_url": f"/api/projects/{project['id']}/workflow/preview",
             "download_url": f"/api/projects/{project['id']}/workflow/package", "fingerprint": fingerprint(project),
             "definition_readiness": readiness, "scope_decisions": scopes, "first_result": baseline}

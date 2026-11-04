@@ -22,7 +22,7 @@ ITEMS = [
     ("evaluation", "Evaluation design", "Problem", "What situations or future periods must the evaluation represent?", "Scientific split design, independent samples, test size, and uncertainty. Future-data tasks need a source, cutoff, collection window, outcome availability, and correction policy; historical replay is not a live future-data run. Optimization needs feasibility rules, objective direction, and numeric tolerances."),
     ("leakage", "Data exposure", "Problem", "Could related samples or answers already available elsewhere reveal the test answers?", "Duplicates, related samples, preprocessing, answer proxies, and public exposure."),
     ("protocol", "Scientific constraints", "Method and deployment", "Are there scientific restrictions beyond the method and deployment limits already discussed?", "Scientific restrictions and any conflict with the available platform. Do not ask the scientist to define platform interfaces, environment versions, or score feedback."),
-    ("competition", "Submission format", "Organizer settings", "Should participants submit a prediction file, or code that runs on hidden inputs?", "Explicit choice of prediction or code competition. This is the submitted artifact, not a restriction to a model family."),
+    ("competition", "Submission format", "Organizer settings", "Should participants submit a prediction file, code that runs on hidden inputs, or a GitHub repository evaluated in an environment?", "Explicit choice of prediction or code competition. This is the submitted artifact, not a restriction to a model family."),
     ("submissions", "Daily submissions", "Organizer settings", "Do you confirm five submissions per team per day, or want a different daily limit?", "Confirm or change the default of five submissions per day."),
     ("review", "Review", "Organizer settings", "Who can review the scientific assumptions in the draft?", "Independent reviewer and the state of the review."),
     ("plan", "Budget and schedule", "Organizer settings", "What compute and model-token budgets would give this problem a credible attempt?", "Separate compute and model-token allowances in any concrete notation, hard limits, owners, and relevant dates. Unknown estimates remain open."),
@@ -607,7 +607,7 @@ def _scope_schema():
         "question_requirement_id": {"type": "string", "enum": ["", *sorted({c["id"] for criteria in readiness.REQUIREMENTS.values() for c in criteria})]}, "question_why": {"type": "string", "maxLength": 1000},
         "question_proposal": {"type": "object", "additionalProperties": False, "properties": {
             "text": {"type": "string", "maxLength": 500}, "basis": {"type": "string", "maxLength": 500},
-            "competition_type": {"type": "string", "enum": ["", "prediction", "code"]},
+            "competition_type": {"type": "string", "enum": ["", "prediction", "code", "environment"]},
             "daily_submission_limit": {"type": "integer", "minimum": 0, "maximum": 1000}},
             "required": ["text", "basis", "competition_type", "daily_submission_limit"]},
         "proposal_response": {"type": "object", "additionalProperties": False, "properties": {
@@ -615,7 +615,7 @@ def _scope_schema():
             "evidence": {"type": "array", "maxItems": 4, "items": quote}},
             "required": ["decision", "evidence"]},
         "setting_choice": {"type": "object", "additionalProperties": False, "properties": {
-            "competition_type": {"type": "string", "enum": ["", "prediction", "code"]},
+            "competition_type": {"type": "string", "enum": ["", "prediction", "code", "environment"]},
             "daily_submission_limit": {"type": "integer", "minimum": 0, "maximum": 1000},
             "evidence": {"type": "array", "maxItems": 4, "items": quote}},
             "required": ["competition_type", "daily_submission_limit", "evidence"]}},
@@ -681,6 +681,14 @@ def _platform_context(project):
             "visibility": "Submitted code receives hidden test inputs. Private answer labels stay in a separate trusted scorer. Participants receive representative examples.",
         },
         "prediction_competition": "Participants receive test inputs without answer labels and submit prediction CSV files.",
+        "environment_competition": {
+            "use_when": "The solution must act in a simulator or game, or the artifact is a trained policy or checkpoint. Do not force these tasks into prediction or code.",
+            "submission": "A GitHub repository, frozen at one commit, with an autokaggle-submission.json manifest. A private repository must give this service access.",
+            "evaluation_unit": "Seeds, not data samples. Each seed is one independent episode. There is no CSV, target column, or row split.",
+            "seed_policy": "The organizer sets a reserved seed range plus development and final seed counts. Training may use any seed outside that range. Exact evaluation seeds stay private.",
+            "metrics": "Each episode records success and score. success_rate or mean_score is the primary metric, and both are reported.",
+            "status": "Commits are frozen and recorded now. Hosted execution of submitted repositories is not enabled. An administrator approves each environment challenge before its review email is sent.",
+        },
         "evaluation": "The final test is 20% and training is 80%. Development validation is drawn from the training portion. The scientist must choose an appropriate random, group, or time split and metric.",
         "feedback": "Participants receive aggregate development scores. Final answers and scores stay private. Quotas apply per team per UTC day and reset at 00:00 UTC.",
         "application_work": ["Generate dataset hashes, schemas, example submission, fixed environment specification, README, website draft, and researcher ZIP.",
@@ -1441,7 +1449,8 @@ def _render(project):
             lines += [_quote(pending["text"]), ""]
     setup = onboarding_setup.get(project)
     format_note = {"prediction": "Prediction competition: the researcher package must contain test inputs without answer labels. Participants return predictions in the specified format.",
-                   "code": "Code competition: the researcher package must contain representative test examples. The evaluator must run submitted code on hidden test inputs and keep the answer labels separate."}.get(setup["competition_type"], "Competition format is not yet selected. Choose prediction or code before the package is built.")
+                   "code": "Code competition: the researcher package must contain representative test examples. The evaluator must run submitted code on hidden test inputs and keep the answer labels separate.",
+                   "environment": "Environment competition: participants submit a GitHub repository frozen at one commit. The evaluator runs its policy in the pinned environment over private seeds from the reserved range. Seeds replace data samples and row splits."}.get(setup["competition_type"], "Competition format is not yet selected. Choose prediction or code before the package is built.")
     lines += ["## Required challenge artifacts", "", "These are requirements for later preparation. This draft does not establish that these files exist or that an evaluator has run.", "",
               "- Define the input/output contract, row identifiers, schema, and a valid example submission.",
               "- Record dataset versions, file hashes, split assignments, and the metric version.",

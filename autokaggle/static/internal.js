@@ -40,7 +40,7 @@
     const q = $("project-search").value.toLowerCase(), root = $("projects"); root.replaceChildren();
     for (const p of state.projects.filter(p => `${p.title} ${p.id}`.toLowerCase().includes(q))) {
       const b = el("button", undefined, "project" + (p.id === state.id ? " active" : "")); b.setAttribute("aria-current", p.id === state.id ? "true" : "false");
-      b.append(el("strong", p.title), el("small", `${p.conversation_status || p.status} · ${p.model_calls} calls`), el("small", date(p.updated_at)));
+      b.append(el("strong", p.title), el("small", `${p.workflow_status === "awaiting_approval" ? "Waiting for approval" : p.conversation_status || p.status} · ${p.model_calls} calls`), el("small", date(p.updated_at)));
       b.addEventListener("click", () => {if (state.id === p.id) return; state.id = p.id; state.data = null; state.pending = null; state.selected = {}; $("new-data").hidden = true; $("record-search").value = ""; $("record-filter").value = ""; $("project-title").textContent = p.title; $("project-id").textContent = p.id; $("records").replaceChildren(el("p", "Loading saved records…", "empty")); $("inspector").replaceChildren(); $("export").disabled = true; projectList(); url(); load(true);});
       root.append(b);
     }
@@ -262,11 +262,26 @@
     if(v.replacement_evidence)section(parent,"Recorded replacement evidence").append(tree(v.replacement_evidence));
     relationMap(parent,row);section(parent,"Change metadata").append(tree(Object.fromEntries(Object.entries(v).filter(([k])=>!["before","after"].includes(k)))));
   }
+  function approvalControl(parent) {
+    const n = section(parent, "Manual approval", "The challenge environment has not run on this service. Approving sends the organizer the review email. A later change to the draft needs a new approval.");
+    const label = el("label", "Note (optional)"), note = el("textarea"), button = el("button", "Approve and send review email"), result = el("p");
+    note.id = "approval-note"; note.rows = 2; note.maxLength = 2000; label.htmlFor = note.id; button.type = "button";
+    button.addEventListener("click", async () => {
+      button.disabled = true; result.textContent = "Approving…";
+      try {
+        const response = await fetch(`/api/internal/projects/${encodeURIComponent(state.id)}/environment-approval`, {method: "POST", credentials: "same-origin", headers: {"Content-Type": "application/json"}, body: JSON.stringify({note: note.value})});
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail || "Approval failed.");
+        result.textContent = `Approved. ${body.notification?.detail || ""}`; await load(true);
+      } catch (error) {result.textContent = error.message; button.disabled = false;}
+    });
+    n.classList.add("approval-control"); n.append(label, note, button, result);
+  }
   function executionInspector(parent,row) {
     const value=row.value;
     if(value===null){parent.append(el("div","No record has been saved for this part of the workflow.","empty"));return;}
     if(row.id==="interview-runtime") {table(parent,[["Saved status",value.status],["Phase",value.phase],["Follow-ups",value.followups],["Interview round",value._interview_round],["In-flight",value._inflight],["Can retry",value.can_retry]]);if(value.current_question)section(parent,"Current question").append(tree(value.current_question));if(value.scope_checkpoint)section(parent,"Saved checkpoint").append(tree(value.scope_checkpoint));const other=section(parent,"Control records");other.append(tree(value));}
-    else if(Array.isArray(value.checks)){table(parent,[["Saved workflow status",value.status],["Version",value.version]]);const n=section(parent,`Saved checks · ${value.checks.length}`);for(const c of value.checks){const block=el("div",undefined,"check-row"),top=el("div");top.append(el("strong",c.label||c.id),pill(c.status));block.append(top,el("p",c.detail||c.description||""));n.append(block);}const more=el("details",undefined,"raw-details");more.append(el("summary","Other workflow data"),tree(Object.fromEntries(Object.entries(value).filter(([k])=>k!=="checks"))));parent.append(more);}
+    else if(Array.isArray(value.checks)){table(parent,[["Saved workflow status",value.status],["Version",value.version]]);if(value.status==="awaiting_approval")approvalControl(parent);const n=section(parent,`Saved checks · ${value.checks.length}`);for(const c of value.checks){const block=el("div",undefined,"check-row"),top=el("div");top.append(el("strong",c.label||c.id),pill(c.status));block.append(top,el("p",c.detail||c.description||""));n.append(block);}const more=el("details",undefined,"raw-details");more.append(el("summary","Other workflow data"),tree(Object.fromEntries(Object.entries(value).filter(([k])=>k!=="checks"))));parent.append(more);}
     else if(Array.isArray(value.columns)){table(parent,[["Rows",value.rows],["Bytes",value.size_bytes],["Columns",value.columns.length]]);for(const column of value.columns){const n=section(parent,column.name);table(n,Object.entries(column).filter(([k])=>k!=="name"));}}
     else parent.append(tree(value));
   }

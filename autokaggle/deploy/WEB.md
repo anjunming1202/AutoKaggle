@@ -113,8 +113,9 @@ source changes. Old immutable source ConfigMaps remain available for inspection.
 Open `/internal`, verify your email and check **Administrator access** on the
 existing login page. Supply the Access Key and use the single **Sign in** button.
 Ordinary email sign-in and challenge review invitations cannot access this page
-or `/api/internal/*`. The page is read-only and shows projects across accounts,
-saved conversations, execution events, selected backend state and model calls.
+or `/api/internal/*`. The page shows projects across accounts, saved
+conversations, execution events, selected backend state and model calls. Its one
+write action approves an environment challenge in that challenge's workflow record.
 It refreshes every five seconds while visible, with a manual refresh option.
 The existing deployment source bundle includes the page and instrumentation;
 redeploy the web workload using the deployment procedure above to activate it.
@@ -145,6 +146,14 @@ the browser. The relevant Python suite passed 416 tests (one Windows symlink
 fixture excluded). The broader Windows run also encountered pre-existing POSIX
 permission, signal, shell and symlink requirements; it was not a fully passing
 Linux runner validation. The login client checks passed 19 tests.
+
+## Private GitHub repositories
+
+Environment challenges read private repositories through `AUTOKAGGLE_GITHUB_TOKEN`.
+Use a read-only credential limited to the repositories meant for evaluation. Add
+it to the `web-secrets` Secret on stdin and restart the pod. The restart interrupts
+the service for about a minute and keeps saved work. Source imports never use this
+credential, so private repository content does not reach the interview model.
 
 ## Service limits
 

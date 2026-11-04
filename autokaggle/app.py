@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 import copy
+import json
 import os
 from pathlib import Path
 import secrets
@@ -16,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import advisor, conversation, onboarding_setup, workflow, notifications, submissions, observability, workspace, sources
+from . import advisor, conversation, environments, onboarding_setup, workflow, notifications, submissions, observability, workspace, sources
 from .access import AccessGate
 from .email_auth import USER_COOKIE
 from .core import datasets
@@ -111,7 +112,7 @@ class ScopeDecision(ConversationAction):
 
 class SetupPatch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    competition_type: Literal["prediction", "code"] | None = None
+    competition_type: Literal["prediction", "code", "environment"] | None = None
     daily_submission_limit: int | None = Field(default=None, ge=1, le=1000)
     submissions_confirmed: bool | None = None
     organizer_email: str | None = Field(default=None, max_length=254)
@@ -128,6 +129,36 @@ class PredictionSubmission(ConversationAction):
 
 class CodeSubmission(ConversationAction):
     source_code: str = Field(min_length=1, max_length=262_144)
+
+
+class RepositorySubmission(ConversationAction):
+    repository_url: str = Field(min_length=1, max_length=300)
+    ref: str = Field(default="", max_length=200)
+
+
+class EnvironmentSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    env_repository: str = Field(min_length=1, max_length=300)
+    env_ref: str = Field(default="", max_length=200)
+    env_factory: str = Field(min_length=1, max_length=200)
+    reserved_start: int
+    reserved_end: int
+    development_seeds: int
+    final_seeds: int
+    smoke_seeds: int = 3
+    primary_metric: Literal["success_rate", "mean_score"]
+    max_episode_steps: int | None = None
+    evaluation_hours: float | None = None
+
+
+class EnvironmentApproval(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    note: str = Field(default="", max_length=2000)
+
+
+class EnvironmentResults(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    episodes_csv: str = Field(min_length=1, max_length=5_000_000)
 
 
 def create_app(data_dir: Path | None = None):
@@ -357,9 +388,66 @@ def create_app(data_dir: Path | None = None):
                 workflow.build(item, store.directory(project_id))
                 store.save(item)
                 notifications.send_review(store, item)
+                notifications.request_approval(store, item)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             return workflow.view(item)
+
+    @app.get("/api/projects/{project_id}/environment")
+    def read_environment(project_id: str, request: Request):
+        return {"environment": get(project_id, request).get("environment")}
+
+    @app.put("/api/projects/{project_id}/environment")
+    def update_environment(project_id: str, body: EnvironmentSettings, request: Request):
+        with editing(project_id, request) as item:
+            if onboarding_setup.get(item)["competition_type"] != "environment":
+                raise HTTPException(409, "Choose environment evaluation before setting seeds.")
+            try:
+                saved = environments.configure(item, body.model_dump())
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            store.save(item)
+            return {"environment": saved, "workflow": workflow.view(item)}
+
+    def internal_project(project_id, request):
+        if not access.is_admin(request):
+            raise HTTPException(403, "Administrator access is required.")
+        with store.connection() as con:
+            row = con.execute("SELECT body FROM projects WHERE id=?", (project_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Project not found.")
+        return json.loads(row[0])
+
+    @app.post("/api/internal/projects/{project_id}/environment-approval")
+    def approve_environment(project_id: str, body: EnvironmentApproval, request: Request):
+        internal_project(project_id, request)
+        lock = store.lock(project_id)
+        if not lock.acquire(blocking=False):
+            raise HTTPException(409, "This challenge is busy. Wait for the current action to finish.")
+        try:
+            item = internal_project(project_id, request)
+            identity = access.user(request) or {}
+            try:
+                workflow.approve_environment(item, identity.get("owner") or "administrator", body.note.strip())
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            store.save(item)
+            notifications.send_review(store, item)
+            return {"status": workflow.view(item)["status"], "notification": item["workflow"]["notification"]}
+        finally:
+            lock.release()
+
+    @app.get("/api/internal/projects/{project_id}/environment-queue")
+    def environment_queue(project_id: str, request: Request):
+        return submissions.environment_queue(store, internal_project(project_id, request))
+
+    @app.post("/api/internal/projects/{project_id}/environment-queue/{submission}/results")
+    def environment_results(project_id: str, submission: str, body: EnvironmentResults, request: Request):
+        item = internal_project(project_id, request)
+        try:
+            return submissions.record_environment_results(store, item, submission, body.episodes_csv, "administrator")
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @app.post("/api/projects/{project_id}/workflow/notify")
     def notify_organizer(project_id: str, request: Request):
@@ -383,7 +471,9 @@ def create_app(data_dir: Path | None = None):
         import html
         directory = built(project_id, request)
         result = workflow.view(get(project_id, request))
-        code_mode = onboarding_setup.get(get(project_id, request))["competition_type"] == "code"
+        competition_type = onboarding_setup.get(get(project_id, request))["competition_type"]
+        code_mode = competition_type == "code"
+        environment_mode = competition_type == "environment"
         code_ready = any(c["id"] == "runner" and c["status"] == "pass" for c in result["checks"])
         file_label = "Python source" if code_mode else "Prediction file"
         file_accept = ".py,text/x-python,text/plain" if code_mode else ".csv,text/csv"
@@ -391,14 +481,20 @@ def create_app(data_dir: Path | None = None):
             if code_ready else "The Civo code trial has not passed. Code submissions are disabled.") if code_mode else "Submit a CSV with development predictions. Final test scores remain private."
         body = (directory / "researcher/index.html").read_text().replace('href="site.css"', f'href="/api/projects/{project_id}/workflow/site.css"')
         checks_html = "".join(f"<li><strong>{html.escape(c['label'])}</strong>: {html.escape(c['detail'])} ({html.escape(c['status'])})</li>" for c in result["checks"])
+        submission_form = f'''<p>{submission_help}</p>
+          <label>{file_label} <input type="file" id="prediction-file" accept="{file_accept}"></label>
+          <button type="button" id="submit-predictions" {'disabled' if code_mode and not code_ready else ''}>Submit {'code' if code_mode else 'predictions'}</button>'''
+        if environment_mode:
+            submission_form = f'''<p>Submit a GitHub repository with {environments.MANIFEST} at its root. A private repository must give this service access. The service freezes one commit and checks the manifest. {environments.EXECUTION_NOTICE}</p>
+          <label>GitHub repository <input type="url" id="repository-url" placeholder="https://github.com/owner/repository"></label>
+          <label>Branch, tag, or commit (optional) <input type="text" id="repository-ref"></label>
+          <button type="button" id="submit-predictions">Freeze this commit</button>'''
         controls = f'''<h2>Organizer review</h2><ul>{checks_html}</ul>
           <p><a href="/api/projects/{project_id}/workflow/package">Download research ZIP</a> ·
           <a href="/?project={project_id}&amp;view=review">Review and request changes</a></p>
-          <section id="submission" data-project="{project_id}" data-version="{result['version']}" data-type="{'code' if code_mode else 'prediction'}">
+          <section id="submission" data-project="{project_id}" data-version="{result['version']}" data-type="{competition_type}">
           <h2>Try a development submission</h2>
-          <p>{submission_help}</p>
-          <label>{file_label} <input type="file" id="prediction-file" accept="{file_accept}"></label>
-          <button type="button" id="submit-predictions" {'disabled' if code_mode and not code_ready else ''}>Submit {'code' if code_mode else 'predictions'}</button>
+          {submission_form}
           <button type="button" id="new-submission-attempt" hidden>New attempt</button>
           <p id="submission-result" role="status"></p>
           <h2>Submission access for an agent</h2>
@@ -439,6 +535,16 @@ def create_app(data_dir: Path | None = None):
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
 
+    @app.post("/api/projects/{project_id}/workflow/repository-submissions")
+    def development_repository_submission(project_id: str, body: RepositorySubmission, request: Request):
+        with editing(project_id, request) as item:
+            try:
+                return submissions.submit_repository(store, item, body.request_id, body.repository_url, body.ref)
+            except submissions.LimitReached as exc:
+                raise HTTPException(429, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+
     @app.post("/api/projects/{project_id}/workflow/access")
     def draft_submission_access(project_id: str, request: Request):
         with editing(project_id, request) as item:
@@ -446,7 +552,7 @@ def create_app(data_dir: Path | None = None):
                 token = submissions.issue_token(store, item)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
-            endpoint = "code-submissions" if onboarding_setup.get(item)["competition_type"] == "code" else "submissions"
+            endpoint = {"code": "code-submissions", "environment": "repository-submissions"}.get(onboarding_setup.get(item)["competition_type"], "submissions")
             return {"token": token, "submission_url": f"/api/evaluation/{project_id}/{endpoint}",
                     "detail": "Submission-only access. This replaces the prior preview token. Keep it outside the research package."}
 
@@ -457,6 +563,10 @@ def create_app(data_dir: Path | None = None):
     @app.post("/api/evaluation/{project_id}/code-submissions")
     def token_code_submission(project_id: str, body: CodeSubmission, request: Request):
         return evaluate_token(project_id, body.request_id, body.source_code, request, "code")
+
+    @app.post("/api/evaluation/{project_id}/repository-submissions")
+    def token_repository_submission(project_id: str, body: RepositorySubmission, request: Request):
+        return evaluate_token(project_id, body.request_id, (body.repository_url, body.ref), request, "environment")
 
     def evaluate_token(project_id, request_id, payload, request, kind):
         header = request.headers.get("authorization", "")
@@ -472,6 +582,8 @@ def create_app(data_dir: Path | None = None):
             if not authorized:
                 raise HTTPException(401, "The draft changed. Request a new submission token.")
             workspace.require_storage(authorized[0])
+            if kind == "environment":
+                return submissions.submit_repository(store, authorized[0], request_id, payload[0], payload[1], authorized[1])
             submit = submissions.submit_code if kind == "code" else submissions.submit
             return submit(store, authorized[0], request_id, payload, authorized[1])
         except RunnerUnavailable as exc:

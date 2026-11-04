@@ -180,3 +180,33 @@ Required setting checkpoints use validated chat choices, such as `Competition: c
 ## Session collaboration and data controls
 
 See [the workspace API](WORKSPACE.md#api-additions) for source import, explicit storage acceptance, session and dataset erasure, answer replacement, handoff codes, and revision after measured attempts. Research writes require the current storage notice (428 until accepted). The existing authorization, project locks, quotas, and retry identities remain in force.
+
+## Environment competitions
+
+Use this format when a solution acts in a simulator or game. Seeds replace data samples: there is no CSV, target column, or row split.
+
+| Route | Purpose |
+| --- | --- |
+| `PATCH /api/projects/{id}/setup` | Set `competition_type` to `environment`. |
+| `PUT /api/projects/{id}/environment` | Save the seed policy and pin the environment repository to one commit. |
+| `POST /api/projects/{id}/workflow/repository-submissions` | Organizer preview. Send `request_id`, `repository_url`, and optional `ref`. |
+| `POST /api/evaluation/{id}/repository-submissions` | The same request with a submission-only token. |
+| `POST /api/internal/projects/{id}/environment-approval` | Administrator only. Approve the current draft and send the review email. Optional `note`. |
+| `GET /api/internal/projects/{id}/environment-queue` | Administrator only. Frozen commits and the private development seeds. |
+| `POST /api/internal/projects/{id}/environment-queue/{submission}/results` | Administrator only. Send `episodes_csv` from an isolated run. |
+
+The seed policy needs a reserved range, development and final seed counts, an environment factory, and a primary metric. The range must hold at least ten times the evaluation seeds. The service chooses the exact seeds and publishes only a SHA-256 commitment.
+
+A submitted repository needs `autokaggle-submission.json` at its root:
+
+```json
+{"format": "autokaggle.environment-submission.v1", "policy_command": ["python", "policy.py"], "requirements": "requirements.lock", "checkpoint": {"path": "model.pt", "sha256": "<64 hex characters>"}}
+```
+
+`requirements`, `checkpoint`, and `framework` are optional. A checkpoint uses `path` or `url`, with `sha256`. A link that cannot be frozen returns 422 and does not use the allowance. A frozen commit counts toward the daily allowance.
+
+A complete draft has status `awaiting_approval`. The review email and review links stay closed until an administrator approves it, and the service mailbox gets one email for each draft that is waiting. `AUTOKAGGLE_APPROVAL_EMAIL` changes that address. Approval applies to one draft. A later change needs a new approval.
+
+A private repository works when `AUTOKAGGLE_GITHUB_TOKEN` can read it. Without that access, the request returns 422 and does not use the allowance. Any request that can reach the service can freeze a repository the credential can read, so grant the credential only the repositories meant for evaluation.
+
+The service never clones or runs a repository. A frozen submission has status `received` until an operator runs it in an isolated environment and records results. Results use the columns `seed,status,success,score,steps`, with one row per development seed. Unfinished episodes stay in the denominator as unsuccessful. Final seeds are not available through any route.

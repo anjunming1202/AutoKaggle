@@ -82,7 +82,7 @@ REQUIREMENTS = {
         _requirement("restrictions", "Scientific restrictions", "State any remaining scientific or experimental constraints. An explicit statement that there are no additional constraints is sufficient. Application-owned interfaces and versions are separate."),
     ],
     "competition": [
-        _requirement("choice", "Competition type", "Choose prediction submissions or code submissions through the validated organizer setting."),
+        _requirement("choice", "Competition type", "Choose prediction submissions, code submissions, or environment evaluation through the validated organizer setting."),
     ],
     "submissions": [
         _requirement("allowance", "Confirmed daily allowance", "Confirm five submissions per team per UTC day or choose another positive daily limit through the validated organizer setting."),
@@ -232,6 +232,7 @@ def _server_complete(field, item):
         return value in {
             "Prediction competition: participants submit predictions for supplied test inputs.",
             "Code competition: submitted code runs against hidden test inputs.",
+            "Environment competition: participants submit a GitHub repository, and its policy is evaluated in an environment over hidden seeds.",
         }
     if field == "submissions":
         match = re.fullmatch(r"([1-9][0-9]{0,3}) submissions per day \(confirmed\)\.", value)

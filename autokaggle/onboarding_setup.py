@@ -50,8 +50,8 @@ def validate_changes(changes):
     if not isinstance(changes, dict) or any(key not in defaults() for key in changes):
         raise ValueError("Use only the supported organizer setup fields.")
     result = copy.deepcopy(changes)
-    if "competition_type" in result and result["competition_type"] not in (None, "prediction", "code"):
-        raise ValueError("Choose prediction or code as the competition type.")
+    if "competition_type" in result and result["competition_type"] not in (None, "prediction", "code", "environment"):
+        raise ValueError("Choose prediction, code, or environment as the competition type.")
     if "daily_submission_limit" in result:
         limit = result["daily_submission_limit"]
         if type(limit) is not int or not 1 <= limit <= 1000:
@@ -90,8 +90,9 @@ def sync_checklist(project, state):
     display = {
         "competition": (values["competition_type"] is not None,
                         {"prediction": "Prediction competition: participants submit predictions for supplied test inputs.",
-                         "code": "Code competition: submitted code runs against hidden test inputs."}.get(values["competition_type"], ""),
-                        "Choose prediction submissions or code submissions explicitly."),
+                         "code": "Code competition: submitted code runs against hidden test inputs.",
+                         "environment": "Environment competition: participants submit a GitHub repository, and its policy is evaluated in an environment over hidden seeds."}.get(values["competition_type"], ""),
+                        "Choose prediction submissions, code submissions, or environment evaluation explicitly."),
         "submissions": (values["submissions_confirmed"],
                         f"{values['daily_submission_limit']} submissions per day" + (" (confirmed)." if values["submissions_confirmed"] else " (default or proposed; not confirmed)."),
                         f"Confirm {values['daily_submission_limit']} submissions per day, or choose another limit."),
@@ -157,7 +158,7 @@ def evidence_patch(field, evidence):
     text = "\n".join(evidence).strip()
     text = re.sub(r"^(?:competition(?: type)?|daily submissions|submissions|organizer(?: email)?)\s*:\s*", "", text, flags=re.IGNORECASE)
     if field == "competition":
-        match = re.fullmatch(r"(?:" + CHOICE_PREFIX + r")?(prediction|code)(?:\s+(?:competition|submissions?|file))?[.!]?", text, re.IGNORECASE)
+        match = re.fullmatch(r"(?:" + CHOICE_PREFIX + r")?(prediction|code|environment)(?:\s+(?:competition|submissions?|file|evaluation))?[.!]?", text, re.IGNORECASE)
         return {"competition_type": match[1].lower()} if match else None
     if field == "submissions":
         match = re.fullmatch(r"(?:(?:we |i )?(?:confirm|choose|allow|use|set|keep)\s+)?(" + QUOTA_NUMBER
@@ -217,7 +218,7 @@ def extract_message(project, text, current_field=None):
         # so alternatives, conditions, negation, and trailing uncertainty do
         # not silently confirm either setting.
         combined = re.fullmatch(
-            r"(" + CHOICE_PREFIX + r"(?:prediction|code)\s+(?:competition|submissions?|file))"
+            r"(" + CHOICE_PREFIX + r"(?:prediction|code|environment)\s+(?:competition|submissions?|file|evaluation))"
             r"\s*(?:,|and)\s*((?:keep |allow |use |confirm )?" + QUOTA_NUMBER + r"(?:\s+submissions?)?\s+(?:per\s+team\s+)?per\s+(?:UTC\s+)?day)[.!]?", chunk, re.IGNORECASE)
         if combined:
             entries = [(key, evidence_patch(key, [combined[index]])) for key, index in (("competition", 1), ("submissions", 2))]
@@ -236,7 +237,7 @@ def extract_message(project, text, current_field=None):
         if not key:
             # Unlabelled settings need an explicit selection sentence. Bare
             # numbers in research prose are never treated as a quota.
-            if re.match(r"^(?:" + CHOICE_PREFIX + r"|(?:prediction|code)(?:\s+(?:competition|submissions?|file))?[.!]?$)", chunk, re.IGNORECASE):
+            if re.match(r"^(?:" + CHOICE_PREFIX + r"|(?:prediction|code|environment)(?:\s+(?:competition|submissions?|file|evaluation))?[.!]?$)", chunk, re.IGNORECASE):
                 patch = evidence_patch("competition", [chunk])
                 if patch:
                     key = "competition"

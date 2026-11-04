@@ -120,3 +120,11 @@ This limits overfitting to repeated public feedback: private outcomes cannot gui
 ## Checks and references
 
 Run `python -m pytest autokaggle/tests -q`, `node autokaggle/tests/test_chat_ui.cjs`, and `node autokaggle/tests/test_review_ui.cjs`. Each test run must also include live OpenRouter validation of the affected model workflow, as required in [AGENTS.md](../AGENTS.md#live-api-testing). Unit tests alone do not establish live model behavior. See the [validation record](docs/VALIDATION.md), [API contract](docs/API.md), and [research report](docs/RESEARCH.md).
+
+## Environment evaluation
+
+An environment competition evaluates a trained policy in a simulator or game. Participants submit a GitHub repository. The service freezes one commit and checks its manifest. Private repositories need access through `AUTOKAGGLE_GITHUB_TOKEN`. Seeds are the evaluation unit: training uses any seed outside a reserved range, and exact evaluation seeds stay private. See [the API](docs/API.md).
+
+Delivered: format selection, seed policy, commit freezing, manifest checks, daily allowance, the policy protocol and harness, the episode scorer, participant package, and review email. The build test runs a constant policy in a built-in test environment. It does not run the challenge environment, so an administrator approves each draft in Internal before the review email is sent.
+
+Not delivered: hosted execution. There is no GPU runner, and the service never runs a submitted repository. An operator must run it in an isolated environment and record the results. Public and private leaderboard release and final-entry selection are not implemented.
