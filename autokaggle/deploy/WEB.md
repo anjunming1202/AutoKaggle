@@ -1,5 +1,21 @@
 # Private AutoKaggle review service
 
+## Current release — 4 November 2026
+
+The owner approved a source-only release of the review workbench and the pending environment-evaluation path. GitHub main contains the separate commits `09ceb90` (30-request interview limit), `43d1ceb` (environment evaluation), and `170d41e` (review workbench). The deployed application source SHA256 is:
+
+```text
+0a4ea61dcb46e11f8c23aba54862d9aef445120f0cb0738e313c171b5bf9eb86
+```
+
+The source ConfigMap is `source-0a4ea61dcb46e11f`. The verified SQLite backup is `/data/backups/pre-review-workbench-20261104T131152Z.sqlite3`. For a source rollback, restore `source-1218337455b67b9a` and its matching SHA256 annotation. Do not restore an old database as part of a source rollback.
+
+Normal entry and old workbench links open the agent. An explicit Review action opens the workbench for a built challenge. It shows the website, package, checks, and trial results. Requesting changes resumes the same agent context. Environment challenges retain manual approval before review email. Submitted repositories are not executed by the web service.
+
+The rollout retained the single replica, persistent data, configuration, and Secrets. Readiness, health, sign-in, email-login availability, redirects, anonymous Internal denial, and exact workbench assets passed. Database integrity, all table counts, and all 29 saved project-body hashes matched before and after the release. There were no active replies at deployment. All four existing built drafts were already stale. No researcher records were edited and no email was sent by release checks.
+
+Before deployment, 1,202 Python tests, 179 Node tests, and a fresh live OpenRouter revision check passed. The live check used medium conversation reasoning and high draft reasoning. The private release receipt is in the ignored `autokaggle/test-results/review-workbench/` folder.
+
 This deployment uses the existing AutoKaggle cluster in London:
 `ecc962fa-2f4c-4a3f-96c4-179af273fb7a`. It uses the separate
 `autokaggle-web` namespace. The original intake site is a different service.

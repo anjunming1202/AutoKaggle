@@ -41,4 +41,4 @@ Storage acceptance, validated contact information, pending replies, and the exis
 
 ## Verification and release status
 
-See `docs/VALIDATION.md` for the actual test record. The local candidate includes the pending environment-evaluation work from the 5 November handoff. The workbench change is not committed, pushed, or deployed by this implementation. Production still needs a coordinated release after the owner selects its scope.
+See `docs/VALIDATION.md` for the test record and `deploy/WEB.md` for the hosted release. The workbench and the environment-evaluation work from the 5 November handoff were committed, pushed, and deployed together on 4 November 2026, after the owner's approval. The 30-request interview limit is retained. Environment execution still requires an operator; this release does not enable hosted execution of submitted repositories.

@@ -135,7 +135,7 @@ Tested in an isolated checkout and temporary stores. Not deployed.
 
 ## Organizer review workbench — 4 November 2026
 
-Tested in the isolated `codex/organizer-review-workbench` checkout, on top of the pending environment changes described above. Not deployed to Civo.
+Tested in the isolated `codex/organizer-review-workbench` checkout, on top of the environment changes described above. The combined release was deployed to Civo on 4 November 2026. The deployment record is in `deploy/WEB.md`.
 
 Normal entry links, old workbench links, and normal sign-in returns open the interview. An explicit Review action opens the workbench only when a built challenge version exists. Account checks still apply. Opening review does not create a project, call a model, start a revision, or approve an environment draft. Legacy participant pages remain available.
 
@@ -152,3 +152,9 @@ python -m autokaggle.scripts.live_workbench_verify
 ```
 
 Reports, logs, and the overview screenshot are in the ignored `autokaggle/test-results/review-workbench/` folder. Email used a local test receiver. No real Gmail message was sent. No production records, hosted runner, or Civo deployment were changed.
+
+### Hosted release verification
+
+After the owner authorized deployment, a fresh live OpenRouter revision check passed with two calls: medium reasoning for scope and high reasoning for the draft. The Civo rollout then passed readiness, public health, email-login availability, old-link redirects, explicit review sign-in, and denial of anonymous Internal access. The deployed workbench JavaScript and CSS match the local source exactly. A desktop browser check confirmed that the hosted sign-in page loads after the rollout.
+
+The database backup passed `PRAGMA integrity_check`. After the rollout, all table counts matched and all 29 saved project bodies had the same hashes as before. The data volume, credentials, application configuration, and other Deployment fields were preserved. Four built drafts were already stale before deployment. No researcher record was edited, and no email was sent by these checks. The detailed receipt is an ignored private operational record.
