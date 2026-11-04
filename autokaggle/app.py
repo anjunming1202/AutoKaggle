@@ -864,9 +864,33 @@ def create_app(data_dir: Path | None = None):
     def chat_index(request: Request):
         if not access.can_open(request, store):
             return RedirectResponse("/login?next=" + quote(str(request.url.path) + ("?" + request.url.query if request.url.query else ""), safe=""), status_code=303)
+        project_id = request.query_params.get("project")
+        if project_id and request.query_params.get("view") == "review":
+            item = get(project_id, request)
+            if workflow.view(item).get("version"):
+                return RedirectResponse("/workbench?project=" + quote(project_id, safe="") + "&view=review", status_code=303)
         return FileResponse(HERE / "static/chat.html")
 
+    @app.get("/static/index.html")
+    def retired_form(request: Request):
+        project_id = request.query_params.get("project")
+        return RedirectResponse("/?project=" + quote(project_id, safe="") if project_id else "/", status_code=303)
+
     @app.get("/workbench")
+    def review_workbench(request: Request):
+        project_id = request.query_params.get("project", "")
+        interview = "/?project=" + quote(project_id, safe="") if project_id else "/"
+        # A saved workbench address is not an instruction to start review.
+        if not project_id or request.query_params.get("view") != "review":
+            return RedirectResponse(interview, status_code=303)
+        destination = "/workbench?project=" + quote(project_id, safe="") + "&view=review"
+        if not access.can_open(request, store):
+            return RedirectResponse("/login?next=" + quote(destination, safe=""), status_code=303)
+        item = get(project_id, request)
+        if not workflow.view(item).get("version"):
+            return RedirectResponse(interview, status_code=303)
+        return FileResponse(HERE / "static/workbench.html")
+
     @app.get("/challenge/{token}")
     def index(request: Request, token: str | None = None):
         if token is None and not access.can_open(request, store):

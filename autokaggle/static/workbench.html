@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8f3">
+  <title>Review workbench · BOLD AutoKaggle</title>
+  <link rel="icon" href="/static/bold-butterfly.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/workbench.css?v=20261104">
+  <script src="/static/workbench.js?v=20261104" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#review-content">Skip to review</a>
+  <header class="topbar">
+    <a class="brand" href="/"><img src="/static/bold-butterfly.svg" width="36" height="36" alt=""><span><strong>BOLD</strong> AutoKaggle<small>ORGANIZER REVIEW</small></span></a>
+    <a id="interview-link" class="button secondary" href="/">Back to the agent</a>
+  </header>
+  <main class="workbench">
+    <div class="heading"><div><span class="eyebrow">REVIEW WORKBENCH</span><h1 id="challenge-title">Loading your challenge…</h1><p>Inspect the first version. Tell the agent what should change.</p></div><div class="heading-actions"><span id="version" class="version"></span><button id="refresh" class="button secondary" type="button">Refresh</button></div></div>
+    <section id="notice" class="notice" role="status" aria-live="polite">Loading saved files and results…</section>
+    <a id="sign-in" class="recovery" hidden>Sign in again</a>
+    <nav class="tabs" role="tablist" aria-label="Challenge review">
+      <button id="tab-overview" role="tab" aria-selected="true" aria-controls="panel-overview" type="button">Overview</button>
+      <button id="tab-definition" role="tab" aria-selected="false" aria-controls="panel-definition" tabindex="-1" type="button">Definition</button>
+      <button id="tab-checks" role="tab" aria-selected="false" aria-controls="panel-checks" tabindex="-1" type="button">Checks</button>
+      <button id="tab-attempts" role="tab" aria-selected="false" aria-controls="panel-attempts" tabindex="-1" type="button">Trial results</button>
+    </nav>
+    <div id="review-content" class="content" tabindex="-1">
+      <section id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
+        <div class="deliverables">
+          <article class="card"><span class="letter">A</span><h2>Challenge website</h2><p>Read the question, rules, and evaluation details.</p><a id="website-link" class="button secondary" target="_blank" rel="noopener noreferrer" hidden>Open website ↗</a><span id="website-state" class="file-state">Checking availability…</span></article>
+          <article class="card"><span class="letter">B</span><h2>Research package</h2><p>Inspect the README, agent instructions, data, and starter files.</p><a id="package-link" class="button secondary" download="challenge.zip" hidden>Download ZIP ↓</a><span id="package-state" class="file-state">Checking availability…</span></article>
+          <article class="card"><span class="letter">C</span><h2>Submission test</h2><p>Try a submission and inspect evaluator readiness.</p><a id="submission-link" class="button secondary" target="_blank" rel="noopener noreferrer" hidden>Try a submission ↗</a><span id="submission-state" class="file-state">Checking availability…</span></article>
+        </div>
+        <div class="overview-grid"><section class="card"><h2>Agreed setup</h2><dl id="setup-summary"></dl></section><section class="card"><h2>First pipeline test</h2><div id="first-result"><p>No result loaded.</p></div></section></div>
+      </section>
+      <section id="panel-definition" role="tabpanel" aria-labelledby="tab-definition" tabindex="0" hidden><h2 class="section-title">Recorded challenge definition</h2><p class="intro">These are the saved answers and scope decisions. Ask the review agent to make changes.</p><div id="definition"></div></section>
+      <section id="panel-checks" role="tabpanel" aria-labelledby="tab-checks" tabindex="0" hidden><h2 class="section-title">Build and evaluation checks</h2><p class="intro">A passed pipeline test is separate from reproducing a scientific reference method.</p><div id="checks"></div></section>
+      <section id="panel-attempts" role="tabpanel" aria-labelledby="tab-attempts" tabindex="0" hidden><h2 class="section-title">Development trial results</h2><p class="intro">Final test scores remain private. These results will be available to the review agent.</p><div id="attempts"></div></section>
+    </div>
+    <footer class="feedback"><div><strong>What would you like to change?</strong><p id="feedback-detail">The review agent keeps your earlier answers and asks targeted questions about your changes.</p></div><button id="request-changes" class="button primary" type="button" disabled>Discuss changes with the agent →</button></footer>
+  </main>
+</body>
+</html>

@@ -210,3 +210,10 @@ A complete draft has status `awaiting_approval`. The review email and review lin
 A private repository works when `AUTOKAGGLE_GITHUB_TOKEN` can read it. Without that access, the request returns 422 and does not use the allowance. Any request that can reach the service can freeze a repository the credential can read, so grant the credential only the repositories meant for evaluation.
 
 The service never clones or runs a repository. A frozen submission has status `received` until an operator runs it in an isolated environment and records results. Results use the columns `seed,status,success,score,steps`, with one row per development seed. Unfinished episodes stay in the denominator as unsuccessful. Final seeds are not available through any route.
+
+
+## Review workbench navigation
+
+`GET /` opens the interview. `GET /workbench?project=ID&view=review` opens the read-only review dashboard after account/project access checks, and only when a built version exists. Explicit legacy `/?project=ID&view=review` links redirect there for built challenges. A bare or old workbench URL redirects to the interview and retains its project ID. Direct `/static/index.html` requests also redirect to the interview; `/challenge/{token}` remains available for existing participant links.
+
+The dashboard reads the project, conversation, workflow, and development-attempt endpoints. Its change button uses the existing `POST /api/projects/{id}/iterate` contract with a stable `request_id`, then opens the same project's agent chat. No new scoring or approval capability is granted. Stale packages remain reviewable but their file/test links are withheld until rebuilt.

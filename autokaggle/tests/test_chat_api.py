@@ -127,7 +127,7 @@ def test_cross_origin_chat_write_is_rejected(chat_app):
 def test_chat_is_home_and_existing_views_remain_available(chat_app):
     with TestClient(chat_app) as client:
         assert "/static/chat.js" in client.get("/").text
-        assert "/static/app.js" in client.get("/workbench").text
+        assert "/static/chat.js" in client.get("/workbench").text
         assert "/static/app.js" in client.get("/challenge/example").text
 
 

@@ -36,7 +36,7 @@ test("Internal returns to the same permitted project and preserves authenticatio
 });
 test("cross-account internal inspection returns to the user's permitted intake context", async () => {
   const h=harness("/internal?project=other",{is_admin:true},["own"],{"autokaggle-interface-context:intake":"/?project=own&view=review"}); await flush();
-  await h.click("intake"); assert.equal(h.destinations[0],"/?project=own&view=review");
+  await h.click("intake"); assert.equal(h.destinations[0],"/?project=own");
 });
 test("inaccessible or external saved contexts cannot open another account or origin", async () => {
   for(const context of ["https://other.example.org/?project=own","/?project=another","/login?project=own"]) {
@@ -57,4 +57,11 @@ test("access failures and cross-tab sign-out hide privileged navigation", async 
   const h=harness("/",{is_admin:true}); await flush(); assert.equal(h.nav.hidden,false);
   h.listeners.storage({key:"autokaggle-session-ended"}); assert.equal(h.nav.hidden,true);
   await h.click("internal"); assert.equal(h.destinations.length,0);
+});
+
+test("Problem Intake always returns to the agent, including remembered workbench addresses", async () => {
+  for (const saved of ["/workbench?project=own", "/workbench?project=own&view=review", "/?project=own&view=review"]) {
+    const h=harness("/internal?project=own",{is_admin:true},["own"],{"autokaggle-interface-context:intake":saved}); await flush();
+    await h.click("intake"); assert.equal(h.destinations[0],"/?project=own");
+  }
 });

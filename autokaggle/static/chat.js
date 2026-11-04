@@ -680,6 +680,12 @@
       submission: safeWebLink(workflow.submission_url || (workflow.download_url ? `${preview}#submission` : null))
     };
   }
+  function openReview() {
+    if (state.workflow?.version && state.projectId) {
+      rememberCompose();
+      window.location.assign("/workbench?project=" + encodeURIComponent(state.projectId) + "&view=review");
+    } else setView("review");
+  }
   function renderReviewControls() {
     const review = state.conversation?.review || {};
     const blocked = working() || !!state.pending || contactRequired() || !reviewAvailable();
@@ -690,6 +696,8 @@
   }
   function renderReview() {
     const workflow = state.workflow; const review = state.conversation?.review || {}; const presentation = workflowPresentation(workflow); const links = reviewLinks();
+    $("review-workbench-link").hidden = !workflow?.version;
+    if (workflow?.version) $("review-workbench-link").href = "/workbench?project=" + encodeURIComponent(state.projectId) + "&view=review";
     $("review-version").textContent = workflow?.version ? `Version ${workflow.version}` : "No package yet";
     $("review-summary").textContent = state.workflowError ? state.workflowError : state.workflowLoading ? "Checking the draft package…" : presentation.text[1];
     for (const kind of ["website", "package", "submission"]) {
@@ -1034,10 +1042,10 @@
   });
     $("organizer-email-form").addEventListener("submit", (event) => { event.preventDefault(); saveOrganizerEmail(); });
     $("organizer-email").addEventListener("input", () => { if (state.contactError) { state.contactError = null; renderContact(); } });
-    $("review-tab").addEventListener("click", () => setView("review"));
-    $("start-revision").addEventListener("click", startRevision); $("revision-outputs").addEventListener("click", () => setView("review"));
+    $("review-tab").addEventListener("click", openReview);
+    $("start-revision").addEventListener("click", startRevision); $("revision-outputs").addEventListener("click", openReview);
     $("review-back-to-chat").addEventListener("click", () => setView("chat")); $("review-build").addEventListener("click", () => setView("readme"));
-    $("review-link").addEventListener("click", (event) => { event.preventDefault(); setView("review"); });
+    $("review-link").addEventListener("click", (event) => { event.preventDefault(); openReview(); });
     for (const id of ["review-website", "review-package", "review-submission"]) $(id).addEventListener("click", (event) => { if (working() || state.pending) event.preventDefault(); });
     $("message-input").addEventListener("input", () => { rememberCompose(); updateControls(); });
     $("message-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (!$("send-message").disabled) $("message-form").requestSubmit(); } });

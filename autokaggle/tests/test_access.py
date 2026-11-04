@@ -78,7 +78,8 @@ def test_local_default_keeps_existing_creation_behavior(tmp_path, monkeypatch):
 
 
 def test_anonymous_and_forged_owner_cannot_create_or_open_workspace(client):
-    for path in ("/", "/workbench", "/?project=example&view=review"):
+    assert client.get("/workbench", follow_redirects=False).headers["location"] == "/"
+    for path in ("/", "/?project=example&view=review", "/workbench?project=example&view=review"):
         response = client.get(path, follow_redirects=False)
         assert response.status_code == 303
         assert response.headers["location"].startswith("/login?next=")

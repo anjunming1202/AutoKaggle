@@ -12,8 +12,8 @@
     try {
       const url = new URL(value, location.origin);
       if (url.origin !== location.origin || !(kind === "internal" ? ["/internal"] : ["/", "/workbench"]).includes(url.pathname)) return null;
-      const clean = new URL(url.pathname, location.origin);
-      for (const key of kind === "internal" ? ["project", "view", "record"] : ["project", "view"]) {
+      const clean = new URL(kind === "internal" ? url.pathname : "/", location.origin);
+      for (const key of kind === "internal" ? ["project", "view", "record"] : ["project"]) {
         const value = url.searchParams.get(key);
         if (value && value.length <= 256) clean.searchParams.set(key, value);
       }

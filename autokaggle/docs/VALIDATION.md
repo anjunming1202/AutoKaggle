@@ -132,3 +132,23 @@ Tested in an isolated checkout and temporary stores. Not deployed.
 - Upgrade: synthetic records written by the deployed source were read by the new source and then by the deployed source again. Only a record marked as replying changed at startup, which is the existing interruption recovery. The built draft showed as out of date until rebuilt, as designed for a generator change. An environment challenge stayed readable after rollback, and its rebuild reported needs_changes.
 - Browser: format selection, seed form, range error, commit pin, draft build, website, repository submission errors, and submission token, on a local server.
 - Not tested: the NLE environment was not run. No GPU evaluation was run. The successful manifest read was simulated because no public repository has the manifest yet. Results were recorded from synthetic episodes. Review email used a test double. The hosted service was not changed.
+
+## Organizer review workbench — 4 November 2026
+
+Tested in the isolated `codex/organizer-review-workbench` checkout, on top of the pending environment changes described above. Not deployed to Civo.
+
+Normal entry links, old workbench links, and normal sign-in returns open the interview. An explicit Review action opens the workbench only when a built challenge version exists. Account checks still apply. Opening review does not create a project, call a model, start a revision, or approve an environment draft. Legacy participant pages remain available.
+
+The regression suites passed 1,202 Python tests and 179 Node tests. Three expected warnings came from invalid class and numeric inputs. The tests cover routes, account access, navigation, stale packages, safe artifact links, preserved context and measured results, duplicate requests, interrupted replies, expired access, and late responses after an account change.
+
+Live OpenRouter checks used `openai/gpt-6.1-sol`. The API check made two real calls. The browser revision made two more: a scope call with medium reasoning and a draft call with high reasoning. These checks started from a seeded scientific definition and a measured CSV pipeline test. They establish the review and revision path, not a complete scientific interview. The revised compute budget was saved while the target and metric remained unchanged.
+
+The desktop browser test covered sign-in, overview, definition details, checks, trial results, an old workbench link, explicit review entry, a request for changes, a model reply, stale artifact links, and a successful rebuild. The rebuilt version restored its website, package, and submission links. No browser warnings or errors were observed. The viewport was 1280 by 720 pixels. A mobile viewport was not tested.
+
+The live check can be repeated with a private root `.env` file:
+
+```sh
+python -m autokaggle.scripts.live_workbench_verify
+```
+
+Reports, logs, and the overview screenshot are in the ignored `autokaggle/test-results/review-workbench/` folder. Email used a local test receiver. No real Gmail message was sent. No production records, hosted runner, or Civo deployment were changed.

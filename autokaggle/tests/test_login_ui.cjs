@@ -215,3 +215,14 @@ test("Successful sign-in clears prior account drafts and tells other tabs to sig
   h.$("email-code").value = "123456"; await h.event("login-form");
   assert.deepEqual(h.storage, { preference: "keep", "autokaggle-session-ended": "1000000" });
 });
+
+for (const [requested, expected] of [
+  ["/workbench", "/"],
+  ["/workbench?project=mine&view=problem", "/?project=mine"],
+  ["/workbench?project=mine&view=review", "/workbench?project=mine&view=review"],
+]) test(`Login returns to the agent unless review was explicit: ${requested}`, async () => {
+  const h = await sent("?next=" + encodeURIComponent(requested));
+  h.responses.push(access(), { redirect: "/", workspace_preserved: true });
+  h.$("email-code").value = "123456"; await h.event("email-code", "input"); await h.event("login-form");
+  assert.deepEqual(h.redirects, [expected]);
+});

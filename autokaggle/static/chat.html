@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#f8f9f4">
   <link rel="icon" type="image/svg+xml" href="/static/bold-butterfly.svg"><title>BOLD AutoKaggle — Shape a research challenge</title>
   <link rel="stylesheet" href="/static/chat.css?v=scope-email-login-upload-200mb-20261030">
-  <script src="/static/chat.js?v=environment-approval-20261104" defer></script>
-  <link rel="stylesheet" href="/static/interface-switch.css"><script src="/static/interface-switch.js" defer></script>
+  <script src="/static/chat.js?v=review-workbench-20261104" defer></script>
+  <link rel="stylesheet" href="/static/interface-switch.css"><script src="/static/interface-switch.js?v=review-workbench-20261104" defer></script>
   <link rel="stylesheet" href="/static/workspace.css?v=20261102"><script src="/static/workspace.js?v=20261102" defer></script>
 </head>
 <body>
@@ -86,6 +86,7 @@
           </div>
           <div class="review-feedback"><div><h3>What would you like to change?</h3><p id="review-feedback-detail">Start a review conversation about the problem definition, method and deployment, or baseline reproduction. The agent keeps the earlier context and asks for specific details where needed.</p></div><button id="start-revision" class="button button-primary" type="button">Request changes <span aria-hidden="true">→</span></button></div>
           <div id="review-change-summary" class="review-change-summary" hidden><h3>Current review round</h3><p id="review-changes"></p></div>
+          <a id="review-workbench-link" class="button button-secondary" hidden>Open review workbench →</a>
           <p id="review-pending" class="review-pending">This is a private draft. Review does not publish the challenge.</p>
         </div>
         <div class="readme-footer"><button id="review-back-to-chat" class="button button-secondary" type="button"><span aria-hidden="true">←</span> Conversation</button><button id="review-build" class="text-button" type="button">Draft &amp; package details <span aria-hidden="true">→</span></button></div>
