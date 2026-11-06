@@ -30,6 +30,16 @@ Joining adds edit access to this session. It does not replace the owner or grant
 
 **Attempts & changes** lists up to twenty saved development attempts. Select **Revisit the problem definition** after a working draft exists. The revision keeps previous context and includes up to ten measured attempt results and their versions. It asks what should change. It does not expose final scores. A scientific change requires rebuilt artifacts. The existing daily allowance continues across revisions.
 
+## Researcher names
+
+Email sign-in asks for a name when the verified account has no name yet. Saving it returns to the requested challenge. Returning accounts use the saved name. A researcher can edit it through **Sessions → Profile**. An existing signed-in account can continue its current session; name collection is presented on its next email sign-in.
+
+Names appear in private session lists, shared-session member lists, new message author labels, and Internal review. Administrators can search projects by researcher name across all pages. **Project details → Researcher name** updates the name on the verified account that owns that project. This also updates its other session listings. This supports labeling existing accounts without asking the researcher to restart their work.
+
+Names are display labels. Duplicate names are allowed. Stable account IDs, verified email sessions, project ownership, and collaboration grants determine access. Existing accounts and data are preserved by an additive `researcher_profiles` table. Name changes update account metadata without rebuilding research packages. Old message author labels stay as recorded; new turns use the current name and role. Legacy messages and non-email review grants keep their existing role labels.
+
+The profile form explains who can see the name. Account profile data are separate from session content. Session deletion keeps the sign-in account and its name; account-level erasure requires the operator. Profile names are not added as account metadata to model requests or participant packages. A name that a researcher writes in the scientific conversation is processed as conversation content.
+
 ## Edit or remove an earlier answer
 
 Select **Edit or remove answer** beside a researcher turn. Write a replacement, or choose removal. Confirm the operation explicitly.
