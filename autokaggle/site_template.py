@@ -18,7 +18,7 @@ SITE_CSS = """
 """.strip()
 
 
-_METRICS = {"accuracy": "Accuracy", "balanced_accuracy": "Balanced accuracy",
+_METRICS = {"success_rate": "Success rate", "mean_score": "Mean episode score", "accuracy": "Accuracy", "balanced_accuracy": "Balanced accuracy",
             "roc_auc": "Area under the ROC curve", "rmse": "Root mean squared error",
             "mae": "Mean absolute error"}
 
@@ -124,7 +124,7 @@ def render_site(spec, readme, baseline):
     logo = "data:image/svg+xml;base64," + b64encode((Path(__file__).parent / "static" / "bold-butterfly.svg").read_bytes()).decode("ascii")
     version = _text(spec.get("version") or "Not assigned")
     mode = spec.get("competition_type")
-    mode_label = {"prediction": "Prediction submissions", "code": "Code submissions"}.get(mode, "Format not selected")
+    mode_label = {"prediction": "Prediction submissions", "code": "Code submissions", "environment": "GitHub repository submissions"}.get(mode, "Format not selected")
     metric = spec.get("metric") or {}
     metric_label = _METRICS.get(metric.get("name"), str(metric.get("name") or "Metric not selected"))
     direction = {"maximize": "Higher scores are better.", "minimize": "Lower scores are better."}.get(metric.get("direction"), "Score direction needs review.")
@@ -139,18 +139,35 @@ def render_site(spec, readme, baseline):
                             ("Development rows", _number(data.get("validation_rows"), "Not prepared")),
                             ("Final test rows", _number(data.get("final_rows"), "Not prepared")),
                             ("Target", spec.get("target") or "Not selected")])
+    seed_policy = split if split.get("unit") == "seed" else None
+    if mode == "environment":
+        source = (spec.get("environment") or {}).get("source") or "Not selected"
+        dataset_facts = _facts([("Environment", source), ("Environment commit", ((spec.get("environment") or {}).get("commit") or "Not pinned")[:12]),
+                                ("Development seeds", _number((seed_policy or {}).get("development_seeds"), "Not set")),
+                                ("Final seeds", _number((seed_policy or {}).get("final_seeds"), "Not set"))])
+        reserved = (seed_policy or {}).get("reserved_range")
+        split_note = f"Seeds {reserved[0]:,} to {reserved[1]:,} are reserved for evaluation. Train on any other seed." if reserved else "Set the reserved seed range."
     score = _number((baseline or {}).get("score"), "Not measured")
     measured = score != "Not measured"
     score_class = "score" if measured else "score pending"
     baseline_metric = _METRICS.get((baseline or {}).get("metric"), str((baseline or {}).get("metric") or metric_label))
     result_note = (f"The constant predictor scored {score} for {baseline_metric.lower()} on {_number(baseline.get('rows'))} development rows. This tests the submission pipeline. It does not reproduce a scientific reference method."
                    if measured else "No measured development result is available for this draft.")
+    if measured and (baseline or {}).get("kind") == "environment_mechanism_test":
+        result_note = (f"A constant policy scored {score} on {_number(baseline.get('rows'))} seeds in a built-in test environment. "
+                       "This tests the seed, protocol, and scoring path. It did not run this challenge's environment or a submission.")
     quota = _number(spec.get("daily_submission_limit"), "Not confirmed")
     submission_facts = _facts([("Allowance per team", f"{quota} per UTC day"), ("Daily reset", spec.get("quota_reset") or "Not recorded")])
     if mode == "prediction":
         access = ["Researchers receive training data and development and final test inputs without answer labels.",
                   "Researchers submit a prediction for each input ID. Development submissions return a score.",
                   "Development and final test answers remain private. Final scores are withheld during development."]
+    elif mode == "environment":
+        access = ["Researchers receive the pinned environment reference, public smoke-test seeds, and a policy protocol. There is no dataset or row split.",
+                  "Researchers submit a GitHub repository. A private repository must give this service access. The service freezes one commit and checks its manifest. It does not run the repository.",
+                  "Exact evaluation seeds stay private. The policy receives observations and never receives a seed.",
+                  "Final scores are withheld during development.",
+                  "Hosted environment execution is not enabled. The README preparation results record the status for this draft."]
     elif mode == "code":
         access = ["Researchers receive training data and representative input examples. Development and final test inputs remain private.",
                   "Submitted code is evaluated on hidden inputs. Test answer labels stay outside the submitted code.",
@@ -182,7 +199,7 @@ def render_site(spec, readme, baseline):
 <header class="site-header"><div class="header-inner"><div class="brand"><img src="{logo}" width="36" height="36" alt="" aria-hidden="true">BOLD AutoKaggle</div><nav class="site-nav" aria-label="Challenge sections"><a href="#overview">Overview</a><a href="#challenge-data">Data &amp; scoring</a><a href="#challenge-readme">Full README</a></nav></div></header>
 <main id="overview"><section class="hero" aria-labelledby="challenge-title"><div class="draft-line"><span class="badge">PRIVATE DRAFT</span><span class="version">Version {version}</span></div><h1 id="challenge-title">{title}</h1><p class="hero-note">Prepared for organizer review. This draft is not published. Review the recorded decisions and first results before release.</p><div class="overview"><h2 class="eyebrow">Scientific question · recorded statement</h2><p>{_overview(spec, readme)}</p></div></section>
 <section id="challenge-data" class="card-grid" aria-label="Challenge summary">
-<article class="card"><p class="eyebrow">Dataset</p><h2>Data at a glance</h2>{dataset_facts}<p class="note">{_text(split_note)}</p><p class="note">Split method: {_text(split.get('method') or 'Not selected')}.</p></article>
+<article class="card"><p class="eyebrow">{'Environment' if mode == 'environment' else 'Dataset'}</p><h2>{'Seeds at a glance' if mode == 'environment' else 'Data at a glance'}</h2>{dataset_facts}<p class="note">{_text(split_note)}</p><p class="note">{'Evaluation unit: seed.' if mode == 'environment' else 'Split method: ' + _text(split.get('method') or 'Not selected') + '.'}</p></article>
 <article class="card"><p class="eyebrow">Submission pipeline test</p><h2>{_text(metric_label)}</h2><div class="{score_class}">{_text(score)}</div><p>{_text(result_note)}</p><p class="note">{_text(direction)} Final data were not scored for this result.</p><p class="note">Metric version: {_text(metric.get('version') or 'Not recorded')}.</p></article>
 <article class="card"><p class="eyebrow">Submission policy</p><h2>{mode_label}</h2>{submission_facts}<p class="note">The allowance applies to each team. Invalid attempts count. Retry the same upload with the same request ID.</p><p class="note">Confirm the contract and first trial before public release.</p></article>
 </section>

@@ -6,6 +6,12 @@
     try {
       const target = new URL(new URLSearchParams(location.search).get("next") || "/", location.origin);
       if (target.origin !== location.origin || !["/", "/workbench", "/internal"].includes(target.pathname) || (target.pathname === "/internal" && !administrator)) return "/";
+      if (target.pathname === "/workbench"
+          && !(target.searchParams.get("view") === "review" && target.searchParams.get("project"))) {
+        const interview = new URL("/", location.origin);
+        if (target.searchParams.get("project")) interview.searchParams.set("project", target.searchParams.get("project"));
+        return interview.pathname + interview.search;
+      }
       return target.pathname + target.search;
     } catch (_) { return "/"; }
   }

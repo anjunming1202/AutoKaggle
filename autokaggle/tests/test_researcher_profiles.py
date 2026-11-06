@@ -66,7 +66,7 @@ def test_invalid_names_are_rejected(name):
     assert error.value.status_code == 400
 
 
-@pytest.mark.parametrize("name,expected", [("  Éduardo   García  ", "Éduardo García"), ("Jose\u0301", "José"), ("李明", "李明"), ("A. O’Connor-Smith", "A. O’Connor-Smith")])
+@pytest.mark.parametrize("name,expected", [("  Éduardo   García  ", "Éduardo García"), ("Jose\u0301", "José"), ("\u674e\u660e", "\u674e\u660e"), ("A. O’Connor-Smith", "A. O’Connor-Smith")])
 def test_names_keep_international_spelling(name, expected):
     assert profiles.validate_name(name) == expected
 
@@ -135,6 +135,10 @@ def test_admin_can_label_an_existing_account_and_search_all_pages(environment):
     with TestClient(app, base_url="https://testserver") as owner, TestClient(app, base_url="https://testserver") as admin:
         login(owner, deliveries)
         project = owner.post("/api/projects", json={"title": "PDE problem"}).json()
+        owner_id = app.state.access.email_auth.identity(owner.cookies[email_auth.USER_COOKIE])["owner"]
+        saved = app.state.store.get(project["id"], owner_id)
+        saved["workflow"] = {"status": "awaiting_approval"}
+        app.state.store.save(saved)
         for index in range(55):
             app.state.store.create("legacy-owner", "Newer study " + str(index))
         login(admin, deliveries, "admin@example.org", admin=True)
@@ -148,6 +152,11 @@ def test_admin_can_label_an_existing_account_and_search_all_pages(environment):
         result = admin.get("/api/internal/projects", params={"q": "ÉDUARDO"}).json()
         assert result["total"] == 1 and result["projects"][0]["id"] == project["id"]
         assert result["projects"][0]["researcher_name"] == "Éduardo García"
+        assert result["projects"][0]["workflow_status"] == "awaiting_approval"
+        unfiltered = admin.get("/api/internal/projects", params={"limit": 100}).json()
+        matching = next(item for item in unfiltered["projects"] if item["id"] == project["id"])
+        assert matching["researcher_name"] == "Éduardo García"
+        assert matching["workflow_status"] == "awaiting_approval"
         assert "researcher@example.org" not in json.dumps(result)
         assert admin.get("/api/internal/projects", params={"q": "%"}).json()["total"] == 0
         detail = admin.get("/api/internal/projects/" + project["id"]).json()

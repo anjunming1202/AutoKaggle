@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 import secrets
 
-from . import onboarding_setup, workflow
+from . import environment_harness, environments, onboarding_setup, workflow
 
 
 class LimitReached(ValueError):
@@ -59,6 +59,50 @@ def submit_code(store, project, request_id, source, team="organizer-preview"):
     return _submit(store, project, request_id, source, team, "code", runner)
 
 
+def submit_repository(store, project, request_id, repository_url, ref="", team="organizer-preview"):
+    payload = json.dumps({"repository_url": repository_url, "ref": ref}, sort_keys=True)
+    return _submit(store, project, request_id, payload, team, "environment")
+
+
+def environment_queue(store, project):
+    """Frozen commits waiting for an isolated run. Seeds are only returned to the operator."""
+    private = store.directory(project["id"]) / "workflow/private"
+    config = project.get("environment") or {}
+    seeds = json.loads((private / "seeds.json").read_text())["development"] if (private / "seeds.json").is_file() else []
+    with store.connection() as con:
+        rows = con.execute("SELECT request,version,result FROM draft_submissions WHERE project=?", (project["id"],)).fetchall()
+    items = [{"submission": row[0], "version": row[1], **json.loads(row[2])} for row in rows if json.loads(row[2]).get("status") == "received"]
+    return {"environment": {key: config.get(key) for key in ("env_repository", "env_commit", "env_private", "env_factory", "max_episode_steps", "evaluation_hours")},
+            "development_seeds": seeds, "submissions": items}
+
+
+def record_environment_results(store, project, submission, episodes_csv, operator):
+    """Score episodes from an isolated run. Only aggregate development results are returned."""
+    private = store.directory(project["id"]) / "workflow/private"
+    if not (private / "seeds.json").is_file():
+        raise ValueError("Build the environment challenge before recording results.")
+    expected = json.loads((private / "seeds.json").read_text())["development"]
+    measured = environment_harness.score_episodes(episodes_csv, expected)
+    spec = json.loads((private / "challenge.json").read_text())
+    metric = spec["metric"]["name"]
+    with store.connection() as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT result FROM draft_submissions WHERE project=? AND request=?", (project["id"], submission)).fetchone()
+        if row is None:
+            raise ValueError("This submission does not exist.")
+        current = json.loads(row[0])
+        if current.get("status") != "received":
+            raise ValueError("This submission is not waiting for results.")
+        result = {**current, "status": "scored", "metric": metric, "score": round(measured[metric], 6), "scope": "development",
+                  "success_rate": round(measured["success_rate"], 6), "mean_score": round(measured["mean_score"], 6),
+                  "success_interval_95": [round(value, 6) for value in measured["success_interval_95"]],
+                  "episodes": measured["episodes"], "completed_episodes": measured["completed_episodes"],
+                  "provenance": {"source": "operator_reported", "operator": operator},
+                  "detail": "Development score from an isolated run recorded by the operator. Final results remain private."}
+        con.execute("UPDATE draft_submissions SET result=? WHERE project=? AND request=?", (json.dumps(result), project["id"], submission))
+    return result
+
+
 def _saved_result(connection, project_id, storage_request, digest):
     prior = connection.execute("SELECT fingerprint,result FROM draft_submissions WHERE project=? AND request=?", (project_id, storage_request)).fetchone()
     if prior is None:
@@ -73,7 +117,10 @@ def _submit(store, project, request_id, payload, team, kind, runner=None):
     if current.get("status") in {"stale", "not_built"} or not current.get("version"):
         raise ValueError("Build the current workflow before making a development submission.")
     private = store.directory(project["id"]) / "workflow/private"
-    if not (private / "validation_truth.csv").is_file():
+    if kind == "environment":
+        if not (private / "seeds.json").is_file():
+            raise ValueError("Set the environment and seed policy, then build the draft, before making a submission.")
+    elif not (private / "validation_truth.csv").is_file():
         raise ValueError("Prepare valid data before making a development submission.")
     if onboarding_setup.get(project)["competition_type"] != kind:
         raise ValueError("The submission format does not match this competition type.")
@@ -84,6 +131,8 @@ def _submit(store, project, request_id, payload, team, kind, runner=None):
         prior = _saved_result(con, project["id"], storage_request, digest)
     if prior is not None:
         return prior
+    # A link that cannot be frozen is not an attempt, so it does not use the allowance.
+    frozen = environments.freeze_submission(**json.loads(payload)) if kind == "environment" else None
     # Remote control checks must not hold the database write lock. A second
     # lookup below handles an attempt that was reserved during those checks.
     runner_available = kind != "code" or runner.status().get("enabled")
@@ -104,6 +153,12 @@ def _submit(store, project, request_id, payload, team, kind, runner=None):
             raise LimitReached("The daily submission allowance has been used. It resets at 00:00 UTC.")
         reserved = {"status": "interrupted", "detail": "The attempt was reserved. If execution stopped, use a new request ID; the reserved attempt still counts.", "request_id": request_id}
         con.execute("INSERT INTO draft_submissions (project,version,request,fingerprint,day,result,team) VALUES (?,?,?,?,?,?,?)", (project["id"], version, storage_request, digest, day, json.dumps(reserved), team))
+    if kind == "environment":
+        result = {"status": "received", "request_id": request_id, "scope": "development", "remaining_today": limit - count - 1, **frozen,
+                  "detail": environments.EXECUTION_NOTICE}
+        with store.connection() as con:
+            con.execute("UPDATE draft_submissions SET result=? WHERE project=? AND request=?", (json.dumps(result), project["id"], storage_request))
+        return result
     try:
         with tempfile.TemporaryDirectory(prefix="prediction-", dir=store.directory(project["id"])) as tmp:
             path = Path(tmp) / "predictions.csv"

@@ -634,6 +634,7 @@
     const descriptions = {
       not_built: ["Not built", "Build draft files and check what is ready for organizer review."],
       draft: ["Draft files", "Draft files are available. Some checks are still pending."],
+      awaiting_approval: ["Waiting for approval", "The required checks passed. An administrator must approve this draft before the review email is sent."],
       ready_for_review: ["Ready for review", "The required checks passed. The organizer still needs to review the package."],
       needs_changes: ["Changes needed", "Check the blocked items before the challenge can proceed."],
       stale: ["Earlier version", "The challenge has changed. Build the package again to include the latest answers."]
@@ -652,7 +653,7 @@
   }
   function renderWorkflow() {
     const workflow = state.workflow; const presentation = workflowPresentation(workflow);
-    $("workflow-status").textContent = presentation.text[0]; $("workflow-status").className = `workflow-status ${["draft", "ready_for_review", "needs_changes", "stale"].includes(presentation.status) ? presentation.status : ""}`;
+    $("workflow-status").textContent = presentation.text[0]; $("workflow-status").className = `workflow-status ${["draft", "awaiting_approval", "ready_for_review", "needs_changes", "stale"].includes(presentation.status) ? presentation.status : ""}`;
     $("workflow-summary").textContent = state.dataDirty ? "Data settings have unsaved changes. Open Data and baseline checks and save them before building the package." : presentation.text[1]; $("workflow-error").textContent = state.workflowError || ""; $("workflow-error").hidden = !state.workflowError;
     const checks = $("workflow-checks"); checks.replaceChildren();
     for (const check of workflow?.checks || []) {
@@ -679,6 +680,12 @@
       submission: safeWebLink(workflow.submission_url || (workflow.download_url ? `${preview}#submission` : null))
     };
   }
+  function openReview() {
+    if (state.workflow?.version && state.projectId) {
+      rememberCompose();
+      window.location.assign("/workbench?project=" + encodeURIComponent(state.projectId) + "&view=review");
+    } else setView("review");
+  }
   function renderReviewControls() {
     const review = state.conversation?.review || {};
     const blocked = working() || !!state.pending || contactRequired() || !reviewAvailable();
@@ -689,6 +696,8 @@
   }
   function renderReview() {
     const workflow = state.workflow; const review = state.conversation?.review || {}; const presentation = workflowPresentation(workflow); const links = reviewLinks();
+    $("review-workbench-link").hidden = !workflow?.version;
+    if (workflow?.version) $("review-workbench-link").href = "/workbench?project=" + encodeURIComponent(state.projectId) + "&view=review";
     $("review-version").textContent = workflow?.version ? `Version ${workflow.version}` : "No package yet";
     $("review-summary").textContent = state.workflowError ? state.workflowError : state.workflowLoading ? "Checking the draft package…" : presentation.text[1];
     for (const kind of ["website", "package", "submission"]) {
@@ -773,9 +782,31 @@
     $("data-example").hidden = !!project.dataset; $("data-example-confirm").checked = false;
     $("data-upload-help").textContent = `CSV format · up to ${state.config?.max_upload_mb || 200} MB.${project.dataset ? " A new file replaces this dataset and clears its audit." : ""}`;
     state.dataSnapshot = JSON.stringify(defaults); state.dataDirty = JSON.stringify(collectDataForm()) !== state.dataSnapshot;
-    renderDataAnalysis(project.analysis); updateDataControls();
+    renderDataAnalysis(project.analysis); renderEnvironmentMode(project); updateDataControls();
   }
   function displayScore(value) { return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"; }
+  function renderEnvironmentMode(project) {
+    const mode = project.setup?.competition_type === "environment"; const config = project.environment || {};
+    $("environment-choice").hidden = mode; $("environment-form").hidden = !mode;
+    for (const id of ["data-file-section", "data-form", "data-results-section", "data-footer"]) $(id).hidden = mode;
+    if (!mode) return;
+    for (const [id, key] of [["env-repository", "env_repository"], ["env-ref", "env_ref"], ["env-factory", "env_factory"], ["env-reserved-start", "reserved_start"], ["env-reserved-end", "reserved_end"], ["env-development", "development_seeds"], ["env-final", "final_seeds"], ["env-max-steps", "max_episode_steps"], ["env-hours", "evaluation_hours"]]) $(id).value = config[key] ?? "";
+    $("env-metric").value = config.primary_metric || "success_rate";
+    $("environment-pin").textContent = config.env_commit ? `Pinned at commit ${config.env_commit.slice(0, 12)}.` : "Not pinned yet.";
+  }
+  async function useEnvironment() {
+    dataMessage("", true); dataMessage("Switching to environment evaluation…");
+    try { await api(`${projectPath()}/setup`, { method: "PATCH", body: JSON.stringify({ competition_type: "environment" }) }); renderDataForm(await api(projectPath())); invalidateWorkflow(); await refreshWorkflow(); dataMessage("Environment evaluation selected. Set the environment and seeds, then create the draft again."); }
+    catch (error) { dataMessage("", false); dataMessage(error.message, true); }
+  }
+  async function saveEnvironment(event) {
+    event.preventDefault(); const number = (id) => $(id).value === "" ? null : Number($(id).value);
+    const body = { env_repository: $("env-repository").value.trim(), env_ref: $("env-ref").value.trim(), env_factory: $("env-factory").value.trim(), reserved_start: number("env-reserved-start"), reserved_end: number("env-reserved-end"), development_seeds: number("env-development"), final_seeds: number("env-final"), primary_metric: $("env-metric").value, max_episode_steps: number("env-max-steps"), evaluation_hours: number("env-hours") };
+    $("save-environment").disabled = true; dataMessage("", true); dataMessage("Checking the repository and pinning its commit…");
+    try { await api(`${projectPath()}/environment`, { method: "PUT", body: JSON.stringify(body) }); renderDataForm(await api(projectPath())); invalidateWorkflow(); await refreshWorkflow(); dataMessage("Environment pinned and seed policy saved. Build the draft again."); }
+    catch (error) { dataMessage("", false); dataMessage(error.message, true); }
+    finally { $("save-environment").disabled = false; }
+  }
   function renderDataAnalysis(analysis) {
     $("data-audit-summary").textContent = analysis ? `${analysis.summary?.blockers ?? 0} blocking checks · ${analysis.summary?.warnings ?? 0} warnings · ${analysis.summary?.passed ?? 0} passed` : "Add a dataset, then run the checks. Results are measured from this dataset.";
     const baseline = $("data-baseline"); baseline.replaceChildren();
@@ -1011,10 +1042,10 @@
   });
     $("organizer-email-form").addEventListener("submit", (event) => { event.preventDefault(); saveOrganizerEmail(); });
     $("organizer-email").addEventListener("input", () => { if (state.contactError) { state.contactError = null; renderContact(); } });
-    $("review-tab").addEventListener("click", () => setView("review"));
-    $("start-revision").addEventListener("click", startRevision); $("revision-outputs").addEventListener("click", () => setView("review"));
+    $("review-tab").addEventListener("click", openReview);
+    $("start-revision").addEventListener("click", startRevision); $("revision-outputs").addEventListener("click", openReview);
     $("review-back-to-chat").addEventListener("click", () => setView("chat")); $("review-build").addEventListener("click", () => setView("readme"));
-    $("review-link").addEventListener("click", (event) => { event.preventDefault(); setView("review"); });
+    $("review-link").addEventListener("click", (event) => { event.preventDefault(); openReview(); });
     for (const id of ["review-website", "review-package", "review-submission"]) $(id).addEventListener("click", (event) => { if (working() || state.pending) event.preventDefault(); });
     $("message-input").addEventListener("input", () => { rememberCompose(); updateControls(); });
     $("message-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (!$("send-message").disabled) $("message-form").requestSubmit(); } });
@@ -1029,6 +1060,7 @@
     $("data-form").addEventListener("submit", (event) => { event.preventDefault(); runDataAction("save"); }); $("data-form").addEventListener("input", markDataDirty);
     $("data-task").addEventListener("change", () => { dataMetrics(); markDataDirty(); }); $("data-split").addEventListener("change", () => { dataSplitFields(); markDataDirty(); }); $("data-target").addEventListener("change", () => { updateDataControls(); markDataDirty(); });
     $("data-example-confirm").addEventListener("change", updateDataControls); $("load-data-example").addEventListener("click", () => runDataAction("example"));
+    $("use-environment").addEventListener("click", useEnvironment); $("environment-form").addEventListener("submit", saveEnvironment);
     $("save-data").addEventListener("click", () => runDataAction("save")); $("analyze-data").addEventListener("click", () => runDataAction("analyze")); $("data-file").addEventListener("change", (event) => runDataAction("upload", event.target.files?.[0]));
     $("continue-interview").addEventListener("click", () => dispatch("continue")); $("draft-continue-interview").addEventListener("click", () => dispatch("continue"));
     $("skip-question").addEventListener("click", () => dispatch("skip")); $("draft-readme").addEventListener("click", () => dispatch("draft")); $("retry-action").addEventListener("click", retry);

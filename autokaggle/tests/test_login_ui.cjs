@@ -222,3 +222,27 @@ test("Successful sign-in clears prior account drafts and tells other tabs to sig
   h.$("email-code").value = "123456"; await h.event("login-form");
   assert.deepEqual(h.storage, { preference: "keep", "autokaggle-session-ended": "1000000" });
 });
+
+for (const [requested, expected] of [
+  ["/workbench", "/"],
+  ["/workbench?project=mine&view=problem", "/?project=mine"],
+  ["/workbench?view=review", "/"],
+  ["/workbench?project=mine&view=review", "/workbench?project=mine&view=review"],
+]) {
+  for (const profileRequired of [false, true]) {
+    test(`Login keeps the selected interview or review destination (profile required: ${profileRequired}): ${requested}`, async () => {
+      const h = await sent("?next=" + encodeURIComponent(requested));
+      h.responses.push(access(), { redirect: "/", workspace_preserved: true, profile_required: profileRequired });
+      h.$("email-code").value = "123456"; await h.event("email-code", "input"); await h.event("login-form");
+      assert.deepEqual(h.redirects, [profileRequired ? "/profile?next=" + encodeURIComponent(expected) : expected]);
+    });
+  }
+}
+
+test("Reauthentication returns to the existing profile form without nesting another profile route", async () => {
+  const next = "/profile?next=" + encodeURIComponent("/workbench?project=mine&view=review");
+  const h = await sent("?next=" + encodeURIComponent(next));
+  h.responses.push(access(), { redirect: "/", workspace_preserved: true, profile_required: true });
+  h.$("email-code").value = "123456"; await h.event("login-form");
+  assert.deepEqual(h.redirects, [next]);
+});

@@ -17,7 +17,7 @@ These decisions were approved by the project owner on 27 October 2026:
 
 ## Agent-led onboarding interview
 
-Use an interview as the main interface. The agent asks the questions. Show four sections in order: **Problem**, **Method & deployment**, **Baseline**, and **Setup**. Put organizer settings in the fourth section. Use the detailed checklist to guide the agent; do not require the researcher to complete a webform.
+Use an interview as the main interface. The agent asks the questions. Normal entry and sign-in must open the agent. The workbench is a review-only view for an explicitly selected, built challenge. It must not create a new challenge on page load or replace the interview as the default. Show four sections in order: **Problem**, **Method & deployment**, **Baseline**, and **Setup**. Put organizer settings in the fourth section. Use the detailed checklist to guide the agent; do not require the researcher to complete a webform.
 
 - Use this readiness definition: **Within the agreed scope, another research agent can implement an attempt and interpret its score without inventing scientific assumptions.** All applicable decisions outside the optional reference baseline are compulsory. Record evidence for each required detail. A general answer or an item marked answered is not sufficient by itself.
 - Keep a checklist visible during the conversation. Show the number of required details recorded for each item and topic, with the evidence and remaining gaps. These bars measure definition coverage, not scientific accuracy. Unknown and deferred required details remain blockers. A documented, explicit reason can establish that a conditional requirement does not apply. Keep application execution checks separate from researcher progress.

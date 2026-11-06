@@ -107,7 +107,7 @@ def _utc():
 def send_review(store, project, *, renew=False):
     current = workflow.view(project)
     if current["status"] != "ready_for_review":
-        result = {"status": "not_ready", "detail": "Resolve the draft checks before sending the review invitation."}
+        result = {"status": "not_ready", "detail": workflow.APPROVAL_NEEDED if current["status"] == "awaiting_approval" else "Resolve the draft checks before sending the review invitation."}
     else:
         if not renew and current.get("notification", {}).get("status") == "sent":
             with store.connection() as con:
@@ -144,7 +144,9 @@ def send_review(store, project, *, renew=False):
             message.set_content("Your private BOLD AutoKaggle draft is ready.\n\n"
                 + f"Version: {current['version']}\n"
                 + f"Submission pipeline test: {first.get('metric', 'not available')} {first.get('score', '')}\n"
-                + "This result uses training-derived validation. It is not a final test score or a reproduced scientific reference result.\n\n"
+                + ("This result uses a constant policy in a built-in test environment. It did not run this challenge's environment or a submission.\n\n"
+                   if first.get("kind") == "environment_mechanism_test" else
+                   "This result uses training-derived validation. It is not a final test score or a reproduced scientific reference result.\n\n")
                 + "First, sign in with this private link. Use it within 24 hours. It works once and opens only this challenge.\n"
                 + base + "/review#token=" + token + "\n\n"
                 + "After sign-in, use these links in the same browser:\n\n"
@@ -168,6 +170,31 @@ def send_review(store, project, *, renew=False):
         project["workflow"]["notification"] = result
         store.save(project)
     return result
+
+
+def request_approval(store, project):
+    """Tell the service mailbox once per draft. A failure here leaves the draft waiting and visible in Internal."""
+    current = workflow.view(project)
+    draft = workflow.fingerprint(project)
+    if current["status"] != "awaiting_approval" or project.get("_approval_requested") == draft:
+        return
+    base = os.getenv("AUTOKAGGLE_PUBLIC_BASE_URL", "").rstrip("/")
+    sender = os.getenv("AUTOKAGGLE_MAIL_FROM", "boldcoscientist@gmail.com")
+    if not base or not (os.getenv("AUTOKAGGLE_SMTP_PASSWORD", "") or _gmail_configured()):
+        return
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = os.getenv("AUTOKAGGLE_APPROVAL_EMAIL", "") or sender
+    message["Subject"] = "An AutoKaggle environment challenge is waiting for approval"
+    message.set_content(f"Challenge: {project['title']}\nVersion: {current['version']}\n\n"
+                        f"Open {base}/internal, select this challenge, and open its workflow record to approve it. "
+                        "The organizer receives the review email only after approval.\n")
+    try:
+        _send_message(message)
+    except (MailUnavailable, OSError, smtplib.SMTPException, ValueError):
+        return
+    project["_approval_requested"] = draft
+    store.save(project)
 
 
 def redeem(store, token, existing_session=""):

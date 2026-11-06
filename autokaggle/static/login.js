@@ -45,6 +45,12 @@
     try {
       const target = new URL(requested, window.location.origin);
       if (target.pathname === "/internal" && !administrator) return "/";
+      if (target.origin === window.location.origin && target.pathname === "/workbench"
+          && !(target.searchParams.get("view") === "review" && target.searchParams.get("project"))) {
+        const interview = new URL("/", window.location.origin);
+        if (target.searchParams.get("project")) interview.searchParams.set("project", target.searchParams.get("project"));
+        return interview.pathname + interview.search;
+      }
       return target.origin === window.location.origin && ["/", "/workbench", "/internal", "/profile"].includes(target.pathname) ? target.pathname + target.search : "/";
     } catch (_) { return "/"; }
   }

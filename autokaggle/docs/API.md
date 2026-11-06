@@ -52,13 +52,13 @@ A new email-account project starts with its verified address as `organizer_email
 
 Use a unique request ID for each action. Retry an uncertain transport outcome with the same action and ID. A model retry uses the `/retry` action with a new ID. The server serializes project writes and returns 409 for a concurrent action.
 
-Question formatting is repaired locally after factual validation. Invalid model JSON, response structure, or evidence receives at most one automatic repair call per action, shared across interview and draft generation. Each call reserves budget before it starts and counts toward the 12-call limit. The replacement is validated in full before facts are applied. Network and authentication failures are not automatically retried. Private conversation state retains fixed validation codes and repair instructions; rejected response bodies are not stored.
+Question formatting is repaired locally after factual validation. Invalid model JSON, response structure, or evidence receives at most one automatic repair call per action, shared across interview and draft generation. Each call reserves budget before it starts and counts toward the 30-call limit. The replacement is validated in full before facts are applied. Network and authentication failures are not automatically retried. Private conversation state retains fixed validation codes and repair instructions; rejected response bodies are not stored.
 
 Chat JSON includes `project_id`, `title`, `mode`, `messages`, `checklist`, `current_question`, `readme`, `phase`, `status`, `error`, `can_retry`, and `followups`. Each checklist item has `id`, `label`, `pillar`, `status`, `value`, and `gap`. Status is `missing`, `partial`, `answered`, or `deferred`; an answered item records the researcher's statement, not independent verification. A conversation status of `working` means the client should poll GET before sending more input. Polling does not acknowledge a pending request: another tab can own the running action. Preserve the pending payload and retry its original request ID until its POST succeeds.
 
 The initial brief is at most 12,000 characters. The engine asks at most eight follow-ups, then generates a draft with unresolved items. The user can draft sooner. Changes clear the previous README so downloads cannot return obsolete answers. Provider failures preserve the message and offer explicit retry or a draft from known information.
 
-The `review` view records the mode, round, status, requested changes, clarified changes, changed fields, follow-up count, and model-call count. Revision mode keeps the full earlier transcript, a snapshot of the prior draft and recorded facts, and safe workflow checks and measured results. It asks only about requested changes. The original draft remains current until the organizer supplies new information. Each round has its own eight-question and 12-call limits. The project retains lifetime call accounting.
+The `review` view records the mode, round, status, requested changes, clarified changes, changed fields, follow-up count, and model-call count. Revision mode keeps the full earlier transcript, a snapshot of the prior draft and recorded facts, and safe workflow checks and measured results. It asks only about requested changes. The original draft remains current until the organizer supplies new information. Each round has its own eight-question and 30-call limits. The project retains lifetime call accounting.
 
 ## Data workbench
 
@@ -195,3 +195,40 @@ Names are account display labels. Existing verified email sessions and account I
 Both PATCH routes require a fresh CSRF token from `GET /api/access`, the matching cookie, and the same-origin request header. Name input accepts 1–100 Unicode characters after normalization and whitespace cleanup. Control characters are rejected. Duplicate names are allowed. The self-update account ID must match the current signed-in account. A switched account receives 409 and must reload the form. Extra fields cannot select another account. Admin updates require a verified account behind the target project; legacy non-email owners receive 422.
 
 Email verification returns `profile_required: true` when a name has not been saved. The browser then opens `/profile` and preserves the safe workspace destination in `next`. Returning named accounts continue directly. Existing API clients and already-open sessions can keep working. `GET /api/config` exposes only the signed-in user's name. Session lists add `researcher_name`; shared members add `name`. Internal detail adds `researcher` with `name` and `can_edit`.
+
+## Environment competitions
+
+Use this format when a solution acts in a simulator or game. Seeds replace data samples: there is no CSV, target column, or row split.
+
+| Route | Purpose |
+| --- | --- |
+| `PATCH /api/projects/{id}/setup` | Set `competition_type` to `environment`. |
+| `PUT /api/projects/{id}/environment` | Save the seed policy and pin the environment repository to one commit. |
+| `POST /api/projects/{id}/workflow/repository-submissions` | Organizer preview. Send `request_id`, `repository_url`, and optional `ref`. |
+| `POST /api/evaluation/{id}/repository-submissions` | The same request with a submission-only token. |
+| `POST /api/internal/projects/{id}/environment-approval` | Administrator only. Approve the current draft and send the review email. Optional `note`. |
+| `GET /api/internal/projects/{id}/environment-queue` | Administrator only. Frozen commits and the private development seeds. |
+| `POST /api/internal/projects/{id}/environment-queue/{submission}/results` | Administrator only. Send `episodes_csv` from an isolated run. |
+
+The seed policy needs a reserved range, development and final seed counts, an environment factory, and a primary metric. The range must hold at least ten times the evaluation seeds. The service chooses the exact seeds and publishes only a SHA-256 commitment.
+
+A submitted repository needs `autokaggle-submission.json` at its root:
+
+```json
+{"format": "autokaggle.environment-submission.v1", "policy_command": ["python", "policy.py"], "requirements": "requirements.lock", "checkpoint": {"path": "model.pt", "sha256": "<64 hex characters>"}}
+```
+
+`requirements`, `checkpoint`, and `framework` are optional. A checkpoint uses `path` or `url`, with `sha256`. A link that cannot be frozen returns 422 and does not use the allowance. A frozen commit counts toward the daily allowance.
+
+A complete draft has status `awaiting_approval`. The review email and review links stay closed until an administrator approves it, and the service mailbox gets one email for each draft that is waiting. `AUTOKAGGLE_APPROVAL_EMAIL` changes that address. Approval applies to one draft. A later change needs a new approval.
+
+A private repository works when `AUTOKAGGLE_GITHUB_TOKEN` can read it. Without that access, the request returns 422 and does not use the allowance. Any request that can reach the service can freeze a repository the credential can read, so grant the credential only the repositories meant for evaluation.
+
+The service never clones or runs a repository. A frozen submission has status `received` until an operator runs it in an isolated environment and records results. Results use the columns `seed,status,success,score,steps`, with one row per development seed. Unfinished episodes stay in the denominator as unsuccessful. Final seeds are not available through any route.
+
+
+## Review workbench navigation
+
+`GET /` opens the interview. `GET /workbench?project=ID&view=review` opens the read-only review dashboard after account/project access checks, and only when a built version exists. Explicit legacy `/?project=ID&view=review` links redirect there for built challenges. A bare or old workbench URL redirects to the interview and retains its project ID. Direct `/static/index.html` requests also redirect to the interview; `/challenge/{token}` remains available for existing participant links.
+
+The dashboard reads the project, conversation, workflow, and development-attempt endpoints. Its change button uses the existing `POST /api/projects/{id}/iterate` contract with a stable `request_id`, then opens the same project's agent chat. No new scoring or approval capability is granted. Stale packages remain reviewable but their file/test links are withheld until rebuilt.

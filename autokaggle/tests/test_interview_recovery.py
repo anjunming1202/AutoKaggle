@@ -31,7 +31,8 @@ def kernel_project():
 
 @pytest.mark.parametrize("text", [CORRECTION, "Don’t use top hat.", "Do not include top hat.",
     "Remove top hat from the task.", "Exclude top hat.", "Only use Fourier kernels.",
-    "Use only Fourier kernels.", "No longer use top hat.", "Stop considering top hat."])
+    "Use only Fourier kernels.", "No longer use top hat.", "Stop considering top hat.",
+    "Scratch the top hat, Fourier constructions only.", "Let's go with the Fourier constructions alone."])
 def test_natural_correction_is_applied_without_special_keyword(monkeypatch, text):
     project = kernel_project()
     response = scope([{**update("data", text), "operation": "correct", "supersedes": [OLD]}],
@@ -47,14 +48,20 @@ def test_natural_correction_is_applied_without_special_keyword(monkeypatch, text
     assert text in state["items"]["data"]["value"]
     assert OLD in state["_superseded_evidence"]
     assert state["current_question"]["requirement_id"] == "outcomes"
+    notice = next(m["content"] for m in state["messages"] if m["role"] == "assistant" and m["content"].startswith("I replaced"))
+    assert OLD in notice and text in notice
 
 
-@pytest.mark.parametrize("text", ["What does top hat mean?", "I don't know the parameters.", "Here are more Fourier parameters."])
-def test_non_correction_cannot_remove_previous_facts(text):
+def test_correction_must_name_exact_recorded_text():
     state = kernel_project()["conversation"]
-    response = scope([{**update("data", text), "operation": "correct", "supersedes": [OLD]}])
-    with pytest.raises(ValueError, match="explicit correction"):
+    text = "Drop the wavelet kernels."
+    response = scope([{**update("data", text), "operation": "correct", "supersedes": ["wavelet kernels will be used"]}])
+    with pytest.raises(ValueError, match="exact, unique prior spans"):
         c._validate_scope(response, text, state)
+
+
+def test_appended_detail_produces_no_correction_notice():
+    assert c._correction_notice([update("data", "Here are more Fourier parameters.")]) is None
 
 
 def test_checkpoint_reason_changes_do_not_repeat_generic_prompt():
@@ -150,6 +157,7 @@ def test_required_setting_checkpoint_accepts_valid_choice_and_advances(monkeypat
     assert before["interview"]["current_stage"] == "setup"
     assert next(item for item in before["checklist"] if item["id"] == field)["active"]
     assert not next(item for item in before["checklist"] if item["id"] == field)["can_accept_scope"]
+    assert state["messages"][-1]["content"].startswith(readiness.REQUIREMENTS[field][0]["label"] + " is a required organizer setting")
     assert "cannot be resolved through scope acceptance" in state["messages"][-1]["content"]
     calls = provider(monkeypatch, [])
     c.submit_message(project, text, "required-setting-choice")

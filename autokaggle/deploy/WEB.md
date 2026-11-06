@@ -1,5 +1,21 @@
 # Private AutoKaggle review service
 
+## Current release — 4 November 2026
+
+The owner approved a source-only release of the review workbench and the pending environment-evaluation path. GitHub main contains the separate commits `09ceb90` (30-request interview limit), `43d1ceb` (environment evaluation), and `170d41e` (review workbench). The deployed application source SHA256 is:
+
+```text
+0a4ea61dcb46e11f8c23aba54862d9aef445120f0cb0738e313c171b5bf9eb86
+```
+
+The source ConfigMap is `source-0a4ea61dcb46e11f`. The verified SQLite backup is `/data/backups/pre-review-workbench-20261104T131152Z.sqlite3`. For a source rollback, restore `source-1218337455b67b9a` and its matching SHA256 annotation. Do not restore an old database as part of a source rollback.
+
+Normal entry and old workbench links open the agent. An explicit Review action opens the workbench for a built challenge. It shows the website, package, checks, and trial results. Requesting changes resumes the same agent context. Environment challenges retain manual approval before review email. Submitted repositories are not executed by the web service.
+
+The rollout retained the single replica, persistent data, configuration, and Secrets. Readiness, health, sign-in, email-login availability, redirects, anonymous Internal denial, and exact workbench assets passed. Database integrity, all table counts, and all 29 saved project-body hashes matched before and after the release. There were no active replies at deployment. All four existing built drafts were already stale. No researcher records were edited and no email was sent by release checks.
+
+Before deployment, 1,202 Python tests, 179 Node tests, and a fresh live OpenRouter revision check passed. The live check used medium conversation reasoning and high draft reasoning. The private release receipt is in the ignored `autokaggle/test-results/review-workbench/` folder.
+
 This deployment uses the existing AutoKaggle cluster in London:
 `ecc962fa-2f4c-4a3f-96c4-179af273fb7a`. It uses the separate
 `autokaggle-web` namespace. The original intake site is a different service.
@@ -113,8 +129,9 @@ source changes. Old immutable source ConfigMaps remain available for inspection.
 Open `/internal`, verify your email and check **Administrator access** on the
 existing login page. Supply the Access Key and use the single **Sign in** button.
 Ordinary email sign-in and challenge review invitations cannot access this page
-or `/api/internal/*`. The page is read-only and shows projects across accounts,
-saved conversations, execution events, selected backend state and model calls.
+or `/api/internal/*`. The page shows projects across accounts, saved
+conversations, execution events, selected backend state and model calls. Its one
+write action approves an environment challenge in that challenge's workflow record.
 It refreshes every five seconds while visible, with a manual refresh option.
 The existing deployment source bundle includes the page and instrumentation;
 redeploy the web workload using the deployment procedure above to activate it.
@@ -145,6 +162,14 @@ the browser. The relevant Python suite passed 416 tests (one Windows symlink
 fixture excluded). The broader Windows run also encountered pre-existing POSIX
 permission, signal, shell and symlink requirements; it was not a fully passing
 Linux runner validation. The login client checks passed 19 tests.
+
+## Private GitHub repositories
+
+Environment challenges read private repositories through `AUTOKAGGLE_GITHUB_TOKEN`.
+Use a read-only credential limited to the repositories meant for evaluation. Add
+it to the `web-secrets` Secret on stdin and restart the pod. The restart interrupts
+the service for about a minute and keeps saved work. Source imports never use this
+credential, so private repository content does not reach the interview model.
 
 ## Service limits
 
@@ -227,3 +252,23 @@ release test; its shared mail transport and invitation rules have automated
 coverage. Existing administrator-owned drafts remain separate from email
 accounts. Use the earlier web record (local operational record; not included in this repository) for the website,
 package, and prediction submission checks.
+
+
+## Interview request limit — 3 November 2026
+
+The private service now permits 30 model requests per interview and revision
+round. Retries and automatic repairs count toward the allowance. The existing
+eight-follow-up checkpoint remains separate. A researcher who reached the old
+limit can refresh the page and use **Continue interview** from the working draft.
+
+Source-only release `1218337455b67b9a1d759f2e3c119d991facef146f25988742f563caf77944e8` includes the merged PR #9 correction
+checks and the local 30-request change. The workload is Ready. The verified
+backup is `/data/backups/pre-interview-30-20261103T192421Z.sqlite3`. All 27 saved project records match
+their pre-release hashes, and all 14 email accounts remain. The running module
+and conversation API both report a limit of 30. HTTPS health and login checks
+passed; anonymous Internal access remains denied and email login is configured.
+
+The immutable source receipt is retained in the ignored local directory
+`autokaggle/test-results/interview-30-release`. The previous source ConfigMap
+`source-328efb55f2d1c054` is retained for rollback. Configuration, Secrets, and
+the data volume were retained.

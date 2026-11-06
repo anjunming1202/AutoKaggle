@@ -88,3 +88,17 @@ test("An account switch requires a fresh form and cannot retry with the old iden
   assert.equal(h.$("save-profile").disabled, true); assert.equal(h.$("profile-sign-in").hidden, false);
   assert.equal(h.$("profile-sign-in").textContent, "Reload profile"); assert.deepEqual(h.redirects, []);
 });
+
+
+for (const [next, expected] of [
+  ["/workbench", "/"],
+  ["/workbench?project=p1", "/?project=p1"],
+  ["/workbench?project=p1&view=problem", "/?project=p1"],
+  ["/workbench?view=review", "/"],
+  ["/workbench?project=p1&view=review", "/workbench?project=p1&view=review"],
+]) {
+  test(`Saving a profile opens the agent unless a challenge review was selected: ${next}`, async () => {
+    const h = harness([access(), { account_id: "account-fixture", name: "A" }, access(), { account_id: "account-fixture", name: "A", is_admin: false }], "?next=" + encodeURIComponent(next));
+    await flush(); await h.submit(); assert.deepEqual(h.redirects, [expected]);
+  });
+}

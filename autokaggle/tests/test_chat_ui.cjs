@@ -1376,3 +1376,14 @@ test("A failed required-setting turn still offers saved-answer recovery before n
   h.checkpoint(); const buttons = descendants(h.$("scope-checkpoint")).filter((n) => n.tag === "button");
   assert.deepEqual(buttons.map((n) => n.textContent), ["Retry saved answer"]);
 });
+
+test("Review explicitly opens the built challenge workbench and preserves unsent text", () => {
+  const destinations=[];let saved=0;
+  const open=uiFunction("openReview", {state:{projectId:"same-project",workflow:{version:"v1"}},rememberCompose:()=>{saved++;},window:{location:{assign:url=>destinations.push(url)}},setView:()=>assert.fail("Built review should use the workbench")});
+  open(); assert.equal(saved,1); assert.deepEqual(destinations,["/workbench?project=same-project&view=review"]);
+});
+test("An unbuilt draft keeps review preparation inside the agent", () => {
+  const views=[];
+  const open=uiFunction("openReview", {state:{projectId:"same-project",workflow:{status:"not_built"}},rememberCompose:()=>{},window:{location:{assign:()=>assert.fail("No package exists yet")}},setView:view=>views.push(view)});
+  open();assert.deepEqual(views,["review"]);
+});

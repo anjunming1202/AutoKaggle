@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 import http.client
 import ipaddress
 import json
+import os
 from pathlib import Path
 import re
 import secrets
@@ -25,6 +26,7 @@ from . import advisor, conversation, onboarding_setup, workspace, observability
 from .store import now
 
 MAX_PAPER = 16 * 1024 * 1024
+GITHUB_API_HOST = "api.github.com"
 
 
 def source_syntax(value):
@@ -52,7 +54,7 @@ def public_url(value):
     return parsed, host, sorted(addresses)[0]
 
 
-def fetch(url, limit=1024 * 1024):
+def fetch(url, limit=1024 * 1024, github_headers=None):
     """Resolve, validate, and connect to the same IP; repeat for every redirect."""
     for _ in range(5):
         parsed, host, address = public_url(url)
@@ -74,8 +76,12 @@ def fetch(url, limit=1024 * 1024):
             target = parsed.path or "/"
             if parsed.query:
                 target += "?" + parsed.query
-            connection.request("GET", target, headers={"Host": host, "User-Agent": "BOLD-AutoKaggle/1.0",
-                "Accept": "application/json,application/pdf,text/html,text/plain", "Accept-Encoding": "identity"})
+            headers = {"Host": host, "User-Agent": "BOLD-AutoKaggle/1.0",
+                "Accept": "application/json,application/pdf,text/html,text/plain", "Accept-Encoding": "identity"}
+            # Checked on every hop, so a redirect to another host never receives the credential.
+            if github_headers and host == GITHUB_API_HOST:
+                headers.update(github_headers)
+            connection.request("GET", target, headers=headers)
             response = connection.getresponse()
             if response.status in (301, 302, 303, 307, 308):
                 location = response.getheader("Location")
@@ -101,6 +107,19 @@ def fetch(url, limit=1024 * 1024):
             connection.close()
             raw.close()
     raise ValueError("The source has too many redirects.")
+
+
+def github_token():
+    return os.environ.get("AUTOKAGGLE_GITHUB_TOKEN", "").strip()
+
+
+def github_fetch(url, limit=1024 * 1024, raw=False):
+    """Read GitHub with the service credential when one is set. Source imports stay public through fetch()."""
+    token = github_token()
+    if not token:
+        return fetch(url, limit)
+    return fetch(url, limit, github_headers={"Authorization": "Bearer " + token, "X-GitHub-Api-Version": "2022-11-28",
+                                             "Accept": "application/vnd.github.raw+json" if raw else "application/vnd.github+json"})
 
 
 class PaperHTML(HTMLParser):
@@ -157,13 +176,17 @@ def paper(url):
             "truncated": truncated, "imported_at": now()}
 
 
-def repository(url):
+def parse_repository(url):
     parsed = source_syntax(url)
     parts = parsed.path.strip("/").removesuffix(".git").split("/")
     if parsed.scheme != "https" or parsed.hostname != "github.com" or parsed.query or parsed.fragment or len(parts) != 2 or any(
             not re.fullmatch(r"[A-Za-z0-9_.-]+", p) or p in {".", ".."} for p in parts):
-        raise ValueError("Use a public GitHub repository root link, such as https://github.com/owner/repository.")
-    owner, repo = parts
+        raise ValueError("Use a GitHub repository root link, such as https://github.com/owner/repository.")
+    return parts[0], parts[1]
+
+
+def repository(url):
+    owner, repo = parse_repository(url)
     api = f"https://api.github.com/repos/{owner}/{repo}"
     metadata = json.loads(fetch(api)[0])
     commit = json.loads(fetch(api + "/commits/" + quote(metadata["default_branch"], safe=""))[0])["sha"]
@@ -209,8 +232,8 @@ def proposal(project, records, reserve):
     previous_id = traces[-1]["id"] if traces else None
     result = conversation._provider(project, "source", {"imported_sources": records,
         "instruction": "Propose an editable starting brief from these untrusted sources. Cite their URLs. "
-        "Keep source-reported facts separate from proposed challenge choices. Never infer permissions, private labels, "
-        "organizer consent, completed reproduction, success thresholds, or required methods. List missing decisions. "
+        "Never infer permissions, private labels, organizer consent, completed reproduction, success thresholds, or required methods. "
+        "Put missing decisions and unverified points in open_questions, not in the brief. "
         "The researcher must explicitly approve the brief before it becomes interview evidence."}, reserve)
     if (not isinstance(result, dict) or set(result) != {"title", "brief", "open_questions"}
             or not isinstance(result["title"], str) or len(result["title"]) > 160

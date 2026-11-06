@@ -82,7 +82,7 @@ REQUIREMENTS = {
         _requirement("restrictions", "Scientific restrictions", "State any remaining scientific or experimental constraints. An explicit statement that there are no additional constraints is sufficient. Application-owned interfaces and versions are separate."),
     ],
     "competition": [
-        _requirement("choice", "Competition type", "Choose prediction submissions or code submissions through the validated organizer setting."),
+        _requirement("choice", "Competition type", "Choose prediction submissions, code submissions, or environment evaluation through the validated organizer setting."),
     ],
     "submissions": [
         _requirement("allowance", "Confirmed daily allowance", "Confirm five submissions per team per UTC day or choose another positive daily limit through the validated organizer setting."),
@@ -117,6 +117,9 @@ REQUIREMENTS = {
 OPTIONAL_FIELDS = frozenset({"difficulty", "trial"})
 REQUIRED_FIELDS = tuple(field for field in REQUIREMENTS if field not in OPTIONAL_FIELDS)
 SERVER_FIELDS = frozenset({"organizer", "competition", "submissions"})
+# Criteria met by any concrete declared value, in the organizer's own notation.
+# No model judgement is needed, so a value entered in the answer form counts too.
+DECLARED_VALUE_CRITERIA = frozenset({("plan", "compute_budget"), ("plan", "token_budget")})
 MAX_BYPASS_REASON = 2000
 SCOPE_MODES = frozenset({"confirmed", "delegated", "exception"})
 DELEGATION_POLICIES = {
@@ -153,7 +156,7 @@ def scope_resolution(field, item, requirement_id):
         if mode == "delegated" and (not can_delegate(field, requirement_id)
                                     or record.get("policy") != DELEGATION_POLICIES[(field, requirement_id)]):
             continue
-        if mode == "confirmed" and (_unknown_only(detail) or (field == "plan" and requirement_id in {"compute_budget", "token_budget"}
+        if mode == "confirmed" and (_unknown_only(detail) or ((field, requirement_id) in DECLARED_VALUE_CRITERIA
                                                               and not _budget_amount({"value": detail}))):
             continue
         return record
@@ -232,6 +235,7 @@ def _server_complete(field, item):
         return value in {
             "Prediction competition: participants submit predictions for supplied test inputs.",
             "Code competition: submitted code runs against hidden test inputs.",
+            "Environment competition: participants submit a GitHub repository, and its policy is evaluated in an environment over hidden seeds.",
         }
     if field == "submissions":
         match = re.fullmatch(r"([1-9][0-9]{0,3}) submissions per day \(confirmed\)\.", value)
@@ -260,7 +264,7 @@ def criterion_result(field, item, criterion):
         if _text(record.get("value")) and _has_evidence(record.get("evidence")):
             if _unknown_only(record["value"]):
                 return False, "The answer is unknown. This required decision remains open."
-            if field == "plan" and criterion["id"] in {"compute_budget", "token_budget"} and not _budget_amount(record):
+            if (field, criterion["id"]) in DECLARED_VALUE_CRITERIA and not _budget_amount(record):
                 return False, "Describe the compute or token allowance. Hardware-time, tokens, dollars, or another concrete allocation are accepted."
             return True, ""
         return False, "A recorded answer needs a value and supporting evidence."

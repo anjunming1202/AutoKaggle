@@ -1,5 +1,29 @@
 # Validation
 
+## PR #13 integration with main — 6 November 2026
+
+The combined researcher-name feature and current main passed 1,228 Python tests, 204 Node client tests, and the English source check. Three expected Python warnings came from invalid prediction classes and numeric overflow. New regression checks preserve both names and pending environment approval status in admin searches. Login and profile checks preserve the agent as the default and retain explicit challenge-review destinations. Unicode test names use escapes to meet the repository source check; the tested values are unchanged.
+
+Two real OpenRouter calls used `openai/gpt-6.1-sol` with medium reasoning. Named organizer and collaborator replies passed. The check also confirmed shared member names, admin search and correction, denial of unauthorized changes, account continuity after sign-in, and exclusion of profile names from model input. The test used a temporary store and captured local mail. It did not test Gmail delivery or change production data.
+
+A separate backend review found no blocking issue. A new visual browser check could not run: the browser permission gate denied access to the temporary local test page. Earlier browser results below describe the earlier branch only. This integration was not deployed to Civo.
+
+## Thirty model requests per round — 3 November 2026
+
+The interview and revision limit is now 30 model requests per round. Failed requests and automatic response repairs count toward that limit. The eight-follow-up checkpoint and lifetime call accounting remain in place. Limit messages use the configured constant. The separate legacy workbench advice limit remains 12 requests per project.
+
+Validation passed 1,135 Python tests, 157 Node client tests, and the English source check. Boundary tests cover requests 13 and 30, exhausted retries, use of the final request for repair, and continuation with a fresh round. Two live OpenRouter calls used `openai/gpt-6.1-sol` with medium reasoning. Requests 13 and 30 processed the correction and preserved independent facts. A subsequent answer made no model call, stayed saved for review, and produced the 30-call limit notice. The prior request count was seeded in temporary fixtures; the live check made two actual requests. Reports stay in the ignored test-results directory. This local verification did not deploy the change.
+
+The change was then deployed to the AutoKaggle Civo service as source `1218337455b67b9a1d759f2e3c119d991facef146f25988742f563caf77944e8`. The rollout and SQLite backup integrity checks passed. All 27 project records match their pre-release hashes, and the service retains 14 email accounts. The running conversation API reports 30. HTTPS health and login checks passed, anonymous Internal access was denied, and email login remained configured. One further live OpenRouter call ran in the deployed container with a temporary in-memory fixture whose counter was seeded at 29. Request 30 completed, and the next answer stopped without another model call and remained saved in that fixture. No production project was written by this model check. See the deployment record in `autokaggle/deploy/WEB.md`.
+
+## PR #12 and PR #9 merge checks — 3 November 2026
+
+The combined changes passed 1,133 Python tests, 157 Node client tests, and the new English source check. Three expected warnings came from invalid prediction classes and numeric overflow.
+
+Merge review found that PR #9 could reopen a confirmed scope after an appended unknown or compatible detail. Requirement reassessment now needs a validated correction that replaces source evidence for that specific decision. Seven new cases cover compatible additions, questions, unknown answers, and preservation of unrelated confirmed decisions. The existing correction fixture now supplies the exact replacement operation required by the prompt.
+
+Live OpenRouter checks used `openai/gpt-6.1-sol` with medium reasoning. Five real model calls passed. The recovery script checked the reported kernel correction, preserved independent parameters, sign-out and sign-in, interrupted-answer retry, and required setting controls. Three further calls checked a correction without the former keywords, a question that leaves the prior choice intact, and an added detail that preserves confirmed scope. Email used a captured local transport. No hosted scientific session was changed and no production deployment was tested. Reports stay in the ignored test-results directory.
+
 ## Researcher names — 3 November 2026
 
 The name feature passed 1,147 Python tests and 171 Node client tests. Three expected warnings came from invalid prediction classes and numeric overflow. New checks cover existing account migration, Unicode names, duplicate names, sign-out and sign-in, stale forms after account changes, CSRF protection, admin access, search across all project pages, collaborator labels, and exclusion of profile names from participant packages. Naming an account leaves its saved scientific records unchanged.
@@ -111,3 +135,42 @@ Deployment receipts, screenshots, temporary project records, and uploaded datase
 ## Limits
 
 The current trial validates the submission and scoring pipeline with a simple predictor. It does not reproduce a scientific reference baseline. Dataset links are not automatically imported. Hosted code execution, the requested public/private leaderboard workflow, and public competition launch remain outside the delivered hosted flow. See the [current implementation](../README.md) and [future work](FUTURE_BACKEND.md).
+
+## Environment evaluation — 4 November 2026
+
+Tested in an isolated checkout and temporary stores. Not deployed.
+
+- Live model: OpenRouter `openai/gpt-6.1-sol`, medium reasoning. A researcher answer that names a checkpoint, a GitHub repository, and held-out seeds selected the environment format. The next question did not ask for a CSV, target column, or row split. Script: `autokaggle/scripts/live_environment_verify.py`.
+- Live GitHub: the NLE repository was pinned to one commit. A repository without the manifest was refused and did not use the allowance.
+- Package: the shipped harness ran the shipped example policy as a real process against a toy environment.
+- Manual approval: a complete environment draft waited for approval with no review email or link. The local browser check approved a synthetic draft in Internal, after which a test double received the organizer email. A repeat approval was refused.
+- Private repositories: automated tests cover the service credential, including that a redirect to another host never receives it and that source imports never use it. A missing repository on live GitHub returned the access message and used no allowance. No credential exists yet, so a private repository was not read from real GitHub.
+- Upgrade: synthetic records written by the deployed source were read by the new source and then by the deployed source again. Only a record marked as replying changed at startup, which is the existing interruption recovery. The built draft showed as out of date until rebuilt, as designed for a generator change. An environment challenge stayed readable after rollback, and its rebuild reported needs_changes.
+- Browser: format selection, seed form, range error, commit pin, draft build, website, repository submission errors, and submission token, on a local server.
+- Not tested: the NLE environment was not run. No GPU evaluation was run. The successful manifest read was simulated because no public repository has the manifest yet. Results were recorded from synthetic episodes. Review email used a test double. The hosted service was not changed.
+
+## Organizer review workbench — 4 November 2026
+
+Tested in the isolated `codex/organizer-review-workbench` checkout, on top of the environment changes described above. The combined release was deployed to Civo on 4 November 2026. The deployment record is in `deploy/WEB.md`.
+
+Normal entry links, old workbench links, and normal sign-in returns open the interview. An explicit Review action opens the workbench only when a built challenge version exists. Account checks still apply. Opening review does not create a project, call a model, start a revision, or approve an environment draft. Legacy participant pages remain available.
+
+The regression suites passed 1,202 Python tests and 179 Node tests. Three expected warnings came from invalid class and numeric inputs. The tests cover routes, account access, navigation, stale packages, safe artifact links, preserved context and measured results, duplicate requests, interrupted replies, expired access, and late responses after an account change.
+
+Live OpenRouter checks used `openai/gpt-6.1-sol`. The API check made two real calls. The browser revision made two more: a scope call with medium reasoning and a draft call with high reasoning. These checks started from a seeded scientific definition and a measured CSV pipeline test. They establish the review and revision path, not a complete scientific interview. The revised compute budget was saved while the target and metric remained unchanged.
+
+The desktop browser test covered sign-in, overview, definition details, checks, trial results, an old workbench link, explicit review entry, a request for changes, a model reply, stale artifact links, and a successful rebuild. The rebuilt version restored its website, package, and submission links. No browser warnings or errors were observed. The viewport was 1280 by 720 pixels. A mobile viewport was not tested.
+
+The live check can be repeated with a private root `.env` file:
+
+```sh
+python -m autokaggle.scripts.live_workbench_verify
+```
+
+Reports, logs, and the overview screenshot are in the ignored `autokaggle/test-results/review-workbench/` folder. Email used a local test receiver. No real Gmail message was sent. No production records, hosted runner, or Civo deployment were changed.
+
+### Hosted release verification
+
+After the owner authorized deployment, a fresh live OpenRouter revision check passed with two calls: medium reasoning for scope and high reasoning for the draft. The Civo rollout then passed readiness, public health, email-login availability, old-link redirects, explicit review sign-in, and denial of anonymous Internal access. The deployed workbench JavaScript and CSS match the local source exactly. A desktop browser check confirmed that the hosted sign-in page loads after the rollout.
+
+The database backup passed `PRAGMA integrity_check`. After the rollout, all table counts matched and all 29 saved project bodies had the same hashes as before. The data volume, credentials, application configuration, and other Deployment fields were preserved. Four built drafts were already stale before deployment. No researcher record was edited, and no email was sent by these checks. The detailed receipt is an ignored private operational record.

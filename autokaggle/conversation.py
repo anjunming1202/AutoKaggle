@@ -22,7 +22,7 @@ ITEMS = [
     ("evaluation", "Evaluation design", "Problem", "What situations or future periods must the evaluation represent?", "Scientific split design, independent samples, test size, and uncertainty. Future-data tasks need a source, cutoff, collection window, outcome availability, and correction policy; historical replay is not a live future-data run. Optimization needs feasibility rules, objective direction, and numeric tolerances."),
     ("leakage", "Data exposure", "Problem", "Could related samples or answers already available elsewhere reveal the test answers?", "Duplicates, related samples, preprocessing, answer proxies, and public exposure."),
     ("protocol", "Scientific constraints", "Method and deployment", "Are there scientific restrictions beyond the method and deployment limits already discussed?", "Scientific restrictions and any conflict with the available platform. Do not ask the scientist to define platform interfaces, environment versions, or score feedback."),
-    ("competition", "Submission format", "Organizer settings", "Should participants submit a prediction file, or code that runs on hidden inputs?", "Explicit choice of prediction or code competition. This is the submitted artifact, not a restriction to a model family."),
+    ("competition", "Submission format", "Organizer settings", "Should participants submit a prediction file, code that runs on hidden inputs, or a GitHub repository evaluated in an environment?", "Explicit choice of prediction or code competition. This is the submitted artifact, not a restriction to a model family."),
     ("submissions", "Daily submissions", "Organizer settings", "Do you confirm five submissions per team per day, or want a different daily limit?", "Confirm or change the default of five submissions per day."),
     ("review", "Review", "Organizer settings", "Who can review the scientific assumptions in the draft?", "Independent reviewer and the state of the review."),
     ("plan", "Budget and schedule", "Organizer settings", "What compute and model-token budgets would give this problem a credible attempt?", "Separate compute and model-token allowances in any concrete notation, hard limits, owners, and relevant dates. Unknown estimates remain open."),
@@ -58,7 +58,7 @@ PARTIAL_QUESTIONS = {
     "support": "Which deadline should participants work toward?",
 }
 MAX_FOLLOWUPS = 8
-MAX_CALLS = 12
+MAX_CALLS = 30
 MAX_REVISION_ROUNDS = 20
 
 
@@ -532,7 +532,25 @@ def sync_legacy_answers(project, manual_fields=()):
         project["_chat_derived_answers"] = records
     if set(previous_manual if isinstance(previous_manual, list) else []) != manual:
         project["_chat_manual_answers"] = sorted(manual)
+    _record_form_declarations(items, answers, manual, fields, criteria_by_answer, known)
     return changed
+
+
+def _record_form_declarations(items, answers, manual, fields, criteria_by_answer, known):
+    # A manual answer is otherwise invisible to the interview checklist. Where a
+    # criterion only needs a concrete declared value, the form entry meets it.
+    for key in manual:
+        source, identifiers = fields[key], criteria_by_answer[key]
+        item = items.get(source)
+        if len(identifiers) != 1 or (source, identifiers[0]) not in readiness.DECLARED_VALUE_CRITERIA or not isinstance(item, dict):
+            continue
+        requirements = item.setdefault("requirements", {})
+        value = answers.get(key)
+        if isinstance(value, str) and known(value):
+            requirements[identifiers[0]] = {"status": "recorded", "value": value.strip(), "evidence": [value.strip()],
+                                            "reason": "", "source": "form"}
+        elif requirements.get(identifiers[0], {}).get("source") == "form":
+            del requirements[identifiers[0]]
 
 
 def recover_interrupted(project):
@@ -607,7 +625,7 @@ def _scope_schema():
         "question_requirement_id": {"type": "string", "enum": ["", *sorted({c["id"] for criteria in readiness.REQUIREMENTS.values() for c in criteria})]}, "question_why": {"type": "string", "maxLength": 1000},
         "question_proposal": {"type": "object", "additionalProperties": False, "properties": {
             "text": {"type": "string", "maxLength": 500}, "basis": {"type": "string", "maxLength": 500},
-            "competition_type": {"type": "string", "enum": ["", "prediction", "code"]},
+            "competition_type": {"type": "string", "enum": ["", "prediction", "code", "environment"]},
             "daily_submission_limit": {"type": "integer", "minimum": 0, "maximum": 1000}},
             "required": ["text", "basis", "competition_type", "daily_submission_limit"]},
         "proposal_response": {"type": "object", "additionalProperties": False, "properties": {
@@ -615,7 +633,7 @@ def _scope_schema():
             "evidence": {"type": "array", "maxItems": 4, "items": quote}},
             "required": ["decision", "evidence"]},
         "setting_choice": {"type": "object", "additionalProperties": False, "properties": {
-            "competition_type": {"type": "string", "enum": ["", "prediction", "code"]},
+            "competition_type": {"type": "string", "enum": ["", "prediction", "code", "environment"]},
             "daily_submission_limit": {"type": "integer", "minimum": 0, "maximum": 1000},
             "evidence": {"type": "array", "maxItems": 4, "items": quote}},
             "required": ["competition_type", "daily_submission_limit", "evidence"]}},
@@ -681,6 +699,14 @@ def _platform_context(project):
             "visibility": "Submitted code receives hidden test inputs. Private answer labels stay in a separate trusted scorer. Participants receive representative examples.",
         },
         "prediction_competition": "Participants receive test inputs without answer labels and submit prediction CSV files.",
+        "environment_competition": {
+            "use_when": "The solution must act in a simulator or game, or the artifact is a trained policy or checkpoint. Do not force these tasks into prediction or code.",
+            "submission": "A GitHub repository, frozen at one commit, with an autokaggle-submission.json manifest. A private repository must give this service access.",
+            "evaluation_unit": "Seeds, not data samples. Each seed is one independent episode. There is no CSV, target column, or row split.",
+            "seed_policy": "The organizer sets a reserved seed range plus development and final seed counts. Training may use any seed outside that range. Exact evaluation seeds stay private.",
+            "metrics": "Each episode records success and score. success_rate or mean_score is the primary metric, and both are reported.",
+            "status": "Commits are frozen and recorded now. Hosted execution of submitted repositories is not enabled. An administrator approves each environment challenge before its review email is sent.",
+        },
         "evaluation": "The final test is 20% and training is 80%. Development validation is drawn from the training portion. The scientist must choose an appropriate random, group, or time split and metric.",
         "feedback": "Participants receive aggregate development scores. Final answers and scores stay private. Quotas apply per team per UTC day and reset at 00:00 UTC.",
         "application_work": ["Generate dataset hashes, schemas, example submission, fixed environment specification, README, website draft, and researcher ZIP.",
@@ -692,7 +718,7 @@ def _platform_context(project):
 def _provider(project, kind, context, reserve):
     state = ensure_conversation(project)
     if _call_count(project) >= MAX_CALLS:
-        raise ValueError("The 12-call model limit has been reached.")
+        raise ValueError(f"The {MAX_CALLS}-call model limit has been reached.")
     project["_model_calls"] = project.get("_model_calls", 0) + 1
     revision = _revision(state)
     if revision:
@@ -741,14 +767,6 @@ def _evidence(text, current):
     raise ModelResponseError("Evidence was not in the current user message")
 
 
-def _explicit_correction(text):
-    """Recognize direct changes without requiring a special correction keyword."""
-    return bool(re.search(
-        r"\b(correction|correcting|actually|instead|replace|revise|update|change|now|meant|wrong|should be|remove|exclude|omit|drop)\b"
-        r"|\b(?:do\s+not|don['’]t|no\s+longer|stop)\s+(?:use|using|include|including|allow|allowing|require|requiring|consider|considering)\b"
-        r"|\b(?:only|just)\s+use\b|\buse\s+only\b", text, re.I))
-
-
 def _validate_scope(parsed, current, state):
     # Older saved/test provider responses can be read, but cannot establish
     # requirement completion. The live provider schema requires assessments.
@@ -781,8 +799,9 @@ def _validate_scope(parsed, current, state):
             raise ModelResponseError("Invalid correction excerpts")
         if operation == "append" and supersedes:
             raise ModelResponseError("An append cannot remove previous facts")
-        if operation == "correct" and not _explicit_correction(current):
-            raise ModelResponseError("A replacement needs an explicit correction")
+        # Whether a message corrects something is judged with evidence, not by
+        # wording. The replaced spans must match exactly, and the researcher sees
+        # every replacement in the reply (_correction_notice).
         if operation == "correct":
             old = state["items"][key]["value"]
             confirmations = [resolution["detail"] for criterion in readiness.REQUIREMENTS[key]
@@ -849,10 +868,15 @@ def _validate_requirements(parsed, current, state, updates):
         if status in {"missing", "deferred"} and not record["reason"].strip():
             raise ModelResponseError("Open requirements need a specific gap")
         previous = state["items"][field].get("requirements", {}).get(identifier, {})
+        decision_sources = _source_quotes(previous) + ([accepted["detail"]] if accepted else [])
+        # An added detail or unknown must not reopen an accepted decision.
+        # Require a validated replacement of evidence for this requirement.
         explicit_correction = bool(accepted and accepted["mode"] == "confirmed" and status in {"missing", "deferred"}
             and any(quote in current for quote in evidence)
-            and any(update["field"] == field and any(quote in update["evidence"] for quote in evidence) for update in updates)
-            and _explicit_correction(current))
+            and any(update["field"] == field and update["operation"] == "correct"
+                    and any(quote in update["evidence"] for quote in evidence)
+                    and any(span in source or source in span for span in update["supersedes"] for source in decision_sources)
+                    for update in updates))
         if status == "conflicting":
             prior = _source_quotes(previous)
             resolved = readiness.scope_resolution(field, state["items"][field], identifier)
@@ -1118,6 +1142,17 @@ def _invalidate_scope_dependents(state, changed_field):
                     break
 
 
+def _correction_notice(updates):
+    """Tell the researcher which recorded text each correction replaced."""
+    def short(text):
+        return text if len(text) <= 160 else text[:157] + "…"
+    changes = [f"“{short(old)}” → “{short(_replacement_text(old, new))}”" for update in updates if update["operation"] == "correct"
+               for old, new in zip(update["supersedes"], update["evidence"])]
+    if changes:
+        return "I replaced " + "; ".join(changes) + ". If I misunderstood, say what should stay."
+    return None
+
+
 def _replacement_text(prior_span, evidence):
     """Keep context when an explicit correction changes one dollar amount.
 
@@ -1254,12 +1289,13 @@ def _checkpoint(state, field, criterion, reason=None):
     _reset_error(state)
     same_decision = previous and all(previous.get(key) == checkpoint[key] for key in ("field", "requirement_id"))
     if not same_decision:
-        instructions = {
-            "competition": "Choose Prediction submissions or Code submissions below, or reply with your choice in chat. This required organizer setting cannot be resolved through scope acceptance.",
-            "submissions": "Confirm or change the daily submission allowance below, or state the allowance in chat. This required organizer setting cannot be resolved through scope acceptance.",
-            "organizer": "Enter your private correspondence email in the email step. This required setting cannot be resolved through scope acceptance.",
-        }
-        _message(state, "assistant", instructions.get(field) or f"We have not resolved {criterion['label'].lower()}. Open this checklist item to confirm the scope, record an explicit exception, or supply a new decision. I will not ask the same detail again automatically.")
+        # The checkpoint card shows each setting's own control; the message only
+        # says which kind of decision this is.
+        if field in readiness.SERVER_FIELDS:
+            text = f"{criterion['label']} is a required organizer setting and cannot be resolved through scope acceptance. Use the option shown below, or reply in chat."
+        else:
+            text = f"We have not resolved {criterion['label'].lower()}. Open this checklist item to confirm the scope, record an explicit exception, or supply a new decision. I will not ask the same detail again automatically."
+        _message(state, "assistant", text)
     elif state["messages"] and state["messages"][-1]["role"] == "user":
         _message(state, "assistant", "Your update is saved. The remaining gap is shown below. You can reply with a decision, review the recorded scope, or leave this detail open and continue.")
 
@@ -1431,7 +1467,8 @@ def _render(project):
             lines += [_quote(pending["text"]), ""]
     setup = onboarding_setup.get(project)
     format_note = {"prediction": "Prediction competition: the researcher package must contain test inputs without answer labels. Participants return predictions in the specified format.",
-                   "code": "Code competition: the researcher package must contain representative test examples. The evaluator must run submitted code on hidden test inputs and keep the answer labels separate."}.get(setup["competition_type"], "Competition format is not yet selected. Choose prediction or code before the package is built.")
+                   "code": "Code competition: the researcher package must contain representative test examples. The evaluator must run submitted code on hidden test inputs and keep the answer labels separate.",
+                   "environment": "Environment competition: participants submit a GitHub repository frozen at one commit. The evaluator runs its policy in the pinned environment over private seeds from the reserved range. Seeds replace data samples and row splits."}.get(setup["competition_type"], "Competition format is not yet selected. Choose prediction or code before the package is built.")
     lines += ["## Required challenge artifacts", "", "These are requirements for later preparation. This draft does not establish that these files exist or that an evaluator has run.", "",
               "- Define the input/output contract, row identifiers, schema, and a valid example submission.",
               "- Record dataset versions, file hashes, split assignments, and the metric version.",
@@ -1459,7 +1496,7 @@ def _draft(project, reserve):
         state["_pending"] = None
         if _revision(state):
             _revision(state)["status"] = "draft_ready"
-        _message(state, "assistant", ("The 12-call model limit was reached. " if budget else "Rules mode: ") + "The draft README contains your recorded answers and open items. You can review it and send corrections.")
+        _message(state, "assistant", (f"The {MAX_CALLS}-call model limit was reached. " if budget else "Rules mode: ") + "The draft README contains your recorded answers and open items. You can review it and send corrections.")
         return
     try:
         public_items = {key: value for key, value in state["items"].items() if key != "organizer"}
@@ -1644,6 +1681,9 @@ def _process_message(project, reserve):
             _record_setting(project, choice["field"], choice["value"], choice["evidence"], message_id)
 
         state.pop("_reassessment_required", None)
+        notice = _correction_notice(updates)
+        if notice:
+            _message(state, "assistant", notice)
         if "requirements" in parsed:
             _apply_requirements(state, requirements)
         state["_unprocessed"] = [m for m in state.get("_unprocessed", []) if m["message_id"] not in reviewed_ids]
@@ -1938,7 +1978,7 @@ def retry_turn(project, request_id, reserve=None):
         _request(state, request_id, "retry")
         return
     if _call_count(project) >= MAX_CALLS:
-        raise ValueError("The 12-call model limit has been reached. Create a draft from the saved answers.")
+        raise ValueError(f"The {MAX_CALLS}-call model limit has been reached. Create a draft from the saved answers.")
     if state["status"] != "error" or not state["can_retry"] or not state.get("_pending"):
         raise ValueError("There is no failed response to retry.")
     if not _request(state, request_id, "retry"):

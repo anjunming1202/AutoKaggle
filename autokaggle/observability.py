@@ -104,7 +104,7 @@ def mark_validation(project, previous_id, status, attempt, code=None):
 def project_detail(item):
     allowed = ("id", "title", "brief", "created_at", "updated_at", "status", "revision", "answers",
                "design", "dataset", "analysis", "advice", "events", "harness", "prepared", "notices",
-               "conversation", "setup", "workflow", "_model_calls", "_model_traces")
+               "conversation", "setup", "workflow", "_environment_approval", "_model_calls", "_model_traces")
     return scrub({key: item[key] for key in allowed if key in item})
 
 
@@ -151,9 +151,9 @@ def register(app, access, store, static_dir):
         with store.connection() as con:
             con.create_function("casefold", 1, lambda value: value.casefold() if isinstance(value, str) else "")
             total = con.execute("SELECT count(*)" + join + where, parameters).fetchone()[0]
-            rows = con.execute("SELECT p.id, p.updated_at, json_extract(p.body, '$.title'), json_extract(p.body, '$.status'), json_extract(p.body, '$._model_calls'), json_extract(p.body, '$.conversation.status'), COALESCE(r.name,'')" + join + where + " ORDER BY p.updated_at DESC, p.id LIMIT ? OFFSET ?", (*parameters, limit, offset)).fetchall()
+            rows = con.execute("SELECT p.id, p.updated_at, json_extract(p.body, '$.title'), json_extract(p.body, '$.status'), json_extract(p.body, '$._model_calls'), json_extract(p.body, '$.conversation.status'), COALESCE(r.name,''), json_extract(p.body, '$.workflow.status')" + join + where + " ORDER BY p.updated_at DESC, p.id LIMIT ? OFFSET ?", (*parameters, limit, offset)).fetchall()
         return {"total": total, "limit": limit, "offset": offset, "projects": [
-            {"id": r[0], "updated_at": r[1], "title": scrub(r[2]), "status": r[3], "model_calls": r[4] or 0, "conversation_status": r[5], "researcher_name": r[6]}
+            {"id": r[0], "updated_at": r[1], "title": scrub(r[2]), "status": r[3], "model_calls": r[4] or 0, "conversation_status": r[5], "researcher_name": r[6], "workflow_status": r[7]}
             for r in rows]}
 
     @app.get("/api/internal/projects/{project_id}")
